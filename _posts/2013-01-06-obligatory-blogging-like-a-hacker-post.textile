@@ -1,0 +1,4 @@
+---
+layout: post
+title: Obligatory Blogging Like a Hacker Post
+---

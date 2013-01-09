@@ -1,0 +1,3 @@
+lessc: /usr/local/bin/lessc
+permalink: /blog/:title
+pygments: true

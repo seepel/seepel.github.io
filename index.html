@@ -1,0 +1,58 @@
+---
+layout: layout
+title: seanplynch
+---
+
+<section>
+ <p class="meta">
+   <img class="avatar" src="http://www.gravatar.com/avatar/95bfe68bceec7e4484cc6ba9d4575873?s=80"/>
+  </p>
+ <p class="content">
+ Sean Lynch is a software engineer in Palo Alto, CA. After obtaining his PhD in Experimental High Energy Physics he turned his hobby of mobile development into his job. Being the geek that he is, in this web space you will find his projects, experiments and thoughts in the scope of technology and software related topics. Feel free to click through below and download a couple of his apps.
+ </p>
+</section>
+<section>
+ <p class="meta">
+   <img src="img/gotmail.png"/>
+  </p>
+ <h2><a href="https://itunes.apple.com/us/app/got-mail/id412977607?mt=12">Got Mail?</a></h2>
+ <h3>Your inbox at a glance</h3>
+ <img class="screenshot" src="img/gotmail-menu.png"/>
+ <p class="content">
+"Got Mail?" is a simple application that works in conjunction with the Mac OS X Mail Application. "Got Mail?" allows you to instantly know how many new messages you have in your Inbox with a simple glance at your menu bar. Working feverishly on a project in Photoshop when you see you have a new message? No problem, with a simple click you instantly have a list of your unread messages without missing a beat. If you need to respond to an email, or send a new email it is all just a click away and you don't have to stop what you're doing to hunt down that Mail window. 
+
+"Got Mail?" helps you get your email needs out of the way so you can focus on the important things.
+ </p>
+<a href="https://itunes.apple.com/us/app/got-mail/id412977607?mt=12"><img class="app_badge" src="img/Download_on_the_Mac_App_Store_Badge_US-UK_165x40_0824.png"/></a>
+</section>
+
+<section>
+<p class="meta">
+  <img class="screenshot" src="img/phonographic_ipod_albums.png"/>
+</p>
+<h2><a href="https://itunes.apple.com/us/app/phonographic/id532092418?mt=8">Phonographic</a></h2>
+<h3>You know you have great taste in music, why not let the whole world know?</h3>
+<img src="img/phonographic_ipad_summary.png">
+<p class="content">
+Phonographic shows your music listening habits in an aesthetically pleasing info graphic.
+See what artists an albums are really your favorites based on how often you play them.
+Then share your great taste in music with your friends and the world via email, Twitter, or Facebook.
+Make your info graphic today and show the world that you know music.
+</p>
+<a href="https://itunes.apple.com/us/app/phonographic/id532092418?mt=8"><img class="app_badge" src="img/Download_on_the_App_Store_Badge_US-UK_135x40.png"/></a>
+</section>
+<article>
+{% for post in site.posts limit:1 %}
+  <p class="meta meta_date">
+    <span class="day">{{ post.date | date: "%d" }}</span>
+    <span class="calendar">
+      <span class="month">{{ post.date | date: "%b" }}</span>
+      <span class="year">{{ post.date | date: "%Y" }}</span>
+    </span>
+  </p>
+  <h2>Latest Ramblings: <a href="{{post.url }}" >{{ post.title }}</a></h2>
+  <p class="content">
+    {{ post.content | postmorefilter: post.url, "Read more" }}
+  </p>
+{% endfor %}
+</article>
