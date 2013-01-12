@@ -35,8 +35,10 @@
 {% else %}
       <li><a href="/blog">BLOG</a></li>
 {% endif %}
-      <li><a href="/seanplynchresume.pdf">RESUME</a></li>
       <li><a href="/contact">CONTACT</a></li>
+{% if page.section == "blog" %}
+      <li class="ss-icon"><a href="/rss.xml" class="ss-icon">RSS</a></li>
+{% endif %}
     </ul>
     </div>
     </div>
@@ -49,6 +51,9 @@
       <li><a href="http://github.com/seepel" class="ss-icon ss-social-circle">githuboctocat</a></li>
       <li><a href="http://twitter.com/seepel" class="ss-icon ss-social-circle">twitter</a></li>
       <li><a href="http://www.linkedin.com/pub/sean-lynch/4b/309/997" class="ss-icon ss-social-circle">linkedin</a></li>
+{% if page.section == "blog" %}
+      <li><a href="/rss.xml" class="ss-icon ss-social-circle">RSS</a></li>
+{% endif %}
       </ul>
       <p class="copyright"> Copyright © Sean Lynch 2013 </p>
     </footer>
