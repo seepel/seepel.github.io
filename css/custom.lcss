@@ -177,6 +177,19 @@ p.meta_date {
   }
 }
 
+.pagination {
+  a {
+    .arrow {
+      font-size: 20px;
+    }
+  }
+  .next {
+    border-left-width: 1px;
+    border-right-width: 0px;
+    float: right;
+  }
+}
+
 .social {
   padding-top: 10px;
   font-size: 30px;
