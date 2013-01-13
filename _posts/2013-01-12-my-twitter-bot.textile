@@ -1,0 +1,281 @@
+---
+layout: post
+title: My New Twitter Bot
+---
+
+<h3>Something a Little Bit Different</h3>
+Now that I have updated my blog and gotten the "Obligatory Blogging Like a Hacker Post":{% post_url 2013-01-09-obligatory-blogging-like-a-hacker-post %} out of the way, I would like to introduce you to "@bucketobytes":https://twitter.com/bucketobytes. <notextile>@bucketobytes</notextile> is my new twitter bot. Before we get into the details about him, I'd like to talk about his inspiration. As I was sorting through my RSS feeds over the holidays I came across "Random Shopper":http://randomshopper.tumblr.com, a bot that Darius Kazemi wrote. Random Shopper is a bot that randomly buys Darius presents on Amazon. I thought "Well that is just a really cool idea, I wish I had thought of it". I then went on a hunt for other bots and came across "@ticbot":https://twitter.com/TicBot and "a few others":http://mashable.com/2012/07/22/funny-twitter-bots/. So I decided I wanted to try my hand at such a thing. So I set out on a quest to build a twitter spam bot, that (hopefully) wouldn't actually do any spamming.<!-- more -->
+
+<h3>What Should a Twitter Bot Do?</h3>
+I have grand plans for <notextile>@bucketobytes</notextile>, but to start off with I wanted to keep things simple to ensure that I would actually get him out there. I decided that the bare minimum was that he should follow people that follow him, reply to <notextile>@mentions</notextile>, and tweet randomly. As far as content, I came across "this github repository":https://github.com/bmc/fortunes that contains a vast number of fortunes. After pairing down the content to the tweet sized fortunes there are about 2000 available. I figured that would be a good start for <notextile>@bucketobytes</notextile> so I blatantly stole them and put them in my own project (thank you "@brianclapper":https://twitter.com/brianclapper!). In the future I have been thinking about incorporating "chatoms":http://chatoms.com and I'm sure there are other countless resources that I can look into. I thought about other more useful content such as: replying to a mention that includes a movie title with the times that movie was playing. Upon reconsideration, however, I think that the guiding principle I will follow is that <notextile>@bucketobytes</notextile> should not really do anything all that useful.
+
+As of this writing the current implementation of <notextile>@bucketobytes</notextile> is as follows. If you follow him, he will follow you back. If you <notextile>@mention</notextile> him, he will <notextile>@reply</notextile> to you with a random fortune. If you <notextile>@mention</notextile> him with the hash tag *#cc* he will retweet what you've sent him. And finally he will spontaneously tweet fortunes at random approximately 22 times per day. There are some other implementations I am considering in the future. The first is a mechanism that you can submit suggestions, perhaps with the hashtag *#iwantbucketobytesto*. Perhaps have him lie, for example subscribe to a "Rotten Tomatoes":http://www.rottentomatoes.com RSS feed and <notextile>@bucketobytes</notextile> will say how much he loved such and such movie. I'm excited to implement new ideas as they occur to me. You can find an up to date list of <notextile>@bucketobytes</notextile> actions here: "<notextile>@bucketobytes</notextile> Info Page":/bucketobytes/.
+
+I will now outline his construction, so if you aren't into reading a lot of code feel free to duck out now.
+
+<h3>The Guts of a Twitter Bot</h3>
+You can find the source code for <notextile>@bucketobytes</notextile> on GitHub here: "seepel/bucketobytes":https://github.com/seepel/bucketobytes. 
+
+*Disclaimer:* I would ask that you not do anything nefarious with my code, but I imagine there is other more advanced software for real spam bots. If you arrived at my site looking for a spam bot implementation, you will probably be better served to look elsewhere. 
+
+<h4>To Python or Not to Python</h4>
+I decided to use python to write my bot as I am very familiar with it from my Physics days, and it would be easy to get things up and running. For the twitter api I tried a few different GitHub projects and decided on "Twython":https://github.com/ryanmcgrath/twython. Twython ended up being the most robust and gave me the most freedom while taking away as many headaches as possible. Other libraries were very good, but ended up being a bit restrictive. In order to get things up and running I did have to modify things quite a bit. At the time of writing Twython was still primarily based in the v1.0 twitter api, and there are some problems with the most recent version of the "requests":http://docs.python-requests.org/en/latest/ module, in particular dealing with oauth. So I updated all the twitter endpoints to v1.1 and modified the streaming portion of Twython to handle the new oauth user endpoint. You can find my changes here: "seepel/Twython":https://github.com/seepel/twython. I didn't end up pushing my changes back to the main repository as my changes are a bit of a hack at the moment. I may come back and revisit this if someone else doesn't beat me to it.
+
+<h4><notextile>@bucketobytes</notextile>: A history</h4>
+My first "implementation":https://github.com/seepel/bucketobytes/tree/090f3e374b9ac63d09d38a687dc492d97ed067b4 was rather fragile and relied entirely upon the REST API. What that meant was that everything that was done, had to be done in discrete chunks. The script would be run periodically, and the bot would have to catch up from its most recent state. Since it was just a prototype I was saving the most recent tweet id in a text file, and stopping processing whenever I hit that tweet. As one would guess this was problematic, if there was ever a problem with that text file <notextile>@bucketobytes</notextile> would get out of sync, and potentially re-run any number of actions. This would be annoying for anyone that interacted with him. From here I decided to move to the streaming API.
+
+The "streaming":https://github.com/seepel/bucketobytes/tree/74d0dec4851cf56f39fd7afbf947b4bf7c4bf499 version was a bit better. It consisted of two scripts: the first was a script that would listen to the user stream and respond accordingly, the second was a separate script that when run would post a random fortune. So the respond script would act as a long running process to respond to actions, and the post script would be run from a crontab periodically. This process worked a lot better, and was stable enough to let run for a while. But I had grander plans, what if I wanted to incorporate the random posting into the replying and have finer control over how many tweets <notextile>@bucketobytes</notextile> was making. This method also led to these scripts being rather lengthy, it would be nice to refactor things.
+
+So I setup a "modular":https://github.com/seepel/bucketobytes/tree/c9f46dc699c0a9e34be3c69a0aa48dc313233cb4 design. To do this I had to learn about threading in python. Luckily I found "this article":http://www.ibm.com/developerworks/aix/library/au-threadingpython/ over at IBM that was dead simple to understand. The script is centered around two long running threads. Of course the first is listening to the user streaming endpoint to trigger replies and follows. Setting up the stream didn't change much from the respond script of the previous iteration. What changed was how I funneled input into twitter. When a json object cames down from the user stream, it is placed into a queue to be processed. To process the pending queue, I setup a Thread class PostScheduler that would be responsible for the coordination of posting and following. Here is how that class is setup.
+
+{% highlight python linenos %}
+class PostScheduler(threading.Thread):
+  def __init__(self, api, simulate=False, controllers=None, default_time_to_sleep=60):
+    threading.Thread.__init__(self)
+    self.api = api
+    self.controllers = controllers
+    self.queue = Queue.Queue()
+    self.post_objects = []
+    self.default_time_to_sleep = default_time_to_sleep
+    self.setDaemon(True)
+{% endhighlight %}
+
+The class has an instance of a Twython object in the api variable, a list of controllers (we'll get to that in a bit), a Queue, and a list of post_objects. The heartbeat of the bot is determined by the run method.
+
+{% highlight python linenos %}
+def run(self):
+    while True:
+      queue_object = self.queue.get()
+      
+      if self.queue.empty():
+        self.queue.put(self.default_time_to_sleep)
+
+      if isinstance(queue_object, (int, long, float)):
+        time_to_sleep = queue_object
+        if time_to_sleep > 0:
+          time.sleep(time_to_sleep)
+          self.evaluate_tweets()
+      else:
+        self.post_objects.append(queue_object)
+
+      self.queue.task_done()
+{% endhighlight %}
+
+What happens here is that the scheduler will remove the first item in the queue. If that item is a number, then that signals to the scheduler that it needs to wait before it handles more actions. If that object is not a number, then it is assumed that it is a dictionary object representing some twitter output (post_object) that needs to be handled. For example: a json object representing a mention from the streaming endpoint. That dictionary is then appended to post_objects for later processing by evaluate_tweets().
+
+{% highlight python linenos %}
+  def evaluate_tweets(self):
+    self.count += 1
+    seconds_from_midnight = (datetime.today() - datetime.min).seconds
+    post_objects_to_remove = []
+
+    for post_object in self.post_objects:
+      can_be_handled = False
+      for controller in self.controllers:
+        if controller.can_handle_object(post_object):
+          can_be_handled = True
+          break
+      if not can_be_handled:
+        post_objects_to_remove.append(post_object)
+
+    for post_object in post_objects_to_remove:
+      self.post_objects.remove(post_object)
+
+    for controller in self.controllers:
+      chosen_object = None
+      for post_object in self.post_objects:
+        if self.evaluate_tweet(controller, post_object, seconds_from_midnight):
+          chosen_object = post_object
+          break
+      if chosen_object != None:
+        self.post_objects.remove(chosen_object)
+        break
+      self.evaluate_tweet(controller, { }, seconds_from_midnight)
+{% endhighlight %}
+
+The evaluate_tweets() method is where the controllers come in. The controllers allow the whole bot to be configured. The first thing evaluate_tweets does, is figure how many seconds it has been since midnight. This way, one can configure the action to be dependent on the time of day. The next thing it does is for each post_object, determine if one of its controllers can handle the object, if not the object is removed. The problem is that there is a lot of stuff that comes in from the user stream that is not a mention or follow, this sequence removes the junk that will never be responded to. The next chunk of code runs through all the controllers and gives them an opportunity to act on the post_object via evaluate_tweet. If a controller handles the object, it is of course removed from the list of post_objects to be handled. The very last line evaluates a post_object being represented by an empty dictionary. This is how spontaneous tweets are generated.
+
+{% highlight python %}
+  def evaluate_tweet(self, controller, post_object, seconds_from_midnight):
+    probability = controller.probabilityToPost(post_object, seconds_from_midnight, self.default_time_to_sleep, self.simulate)
+    if probability == 0:
+      return False
+    steps = 10000.0
+    random_number = random.randrange(steps)/steps
+    if random_number <= probability:
+      self.posts += 1
+      print controller
+      print controller.composePost(self.api, post_object, self.simulate)
+      controller.postUpdateStatus(self.api, post_object)
+      return True
+    return False
+{% endhighlight %}
+
+The evaluate_tweet() method asks a controller for the probability to respond to an object based on the object, the time of day, and the size of the time step that governs the schedulers heartbeat. The method then generates a random number and if the number is less than the probability, prompts the controller to respond to the object. This allows a controller to do something such as make tweets happen at certain times of day, while still being somewhat random. The second thing that is helpful about this method is that it allows a controller to back off on certain actions. For example, say there is a controller that handles replies, and someone decides to spam the account with 1000 mentions. If my bot were to respond to all those mentions at once, it would probably hit the twitter limit and potentially get blocked. This allows the bot to cut certain users off from replies.
+
+Now that we see how the bot handles the flow of tweets, let's talk controllers. Controllers are responsible for determining how and when the bot should tweet. For example there is a PostController that is responsible for spontaneously posting tweets, the ReplyController is responsible for dealing with mentions, the RetweetController is responsible for handling instances where someone retweets one of <notextile>@bucketobytes</notextile> tweets, and etc. Here is the PostController:
+
+{% highlight python linenos %}
+class PostController(object):
+  def __init__(self, post_composers = [], postControllers = None, current_user=None):
+    self.post_composers = post_composers
+    self.current_user = current_user
+
+  def can_handle_object(self, post_object):
+    return len(post_object) == 0
+
+  def probabilityToPost(self, post_object, seconds_from_midnight, time_step, simulate=False):
+    if len(post_object) != 0:
+      return 0
+    if self.isCurrentUser(post_object):
+      return 0
+    # flat distribution 22 tweets per day
+    one_day = 60.*60.*24./float(time_step)
+    if simulate:
+      one_day /= 60
+    return 22./one_day
+
+  def isCurrentUser(self, post_object):
+    if self.current_user == None:
+      print 'No current user skipping'
+      return False
+    # don't respond if the tweet belongs to the current user -- would be infinite loop!
+    if post_object.has_key('user'):
+      if post_object['user'].has_key('id_str'):
+        return post_object['user']['id_str'] == self.current_user['id_str']
+    return False
+
+  def choosePostComposer(self):
+    post_composers = []
+    total_percent = 0
+    for post_composer in self.post_composers:
+      if post_composer.percent() == 100:
+        return post_composer
+      post_composers.append(post_composer)
+      total_percent += post_composer.percent()
+    probability = random.randrange(total_percent)
+    threshold = 0
+    for post_composer in post_composers:
+      if threshold <= post_composer.percent():
+        return post_composer
+      threshold += post_composer.percent()
+    return post_composer
+
+  def composePost(self, api, post_object, simulate):
+    return self.choosePostComposer().compose(api, post_object, simulate)
+
+{% endhighlight %}
+
+The post controller handles post objects that are empty dictionaries, this happens at the end of each scheduler cycle. Thus far, it has a constant probability to post such that the average should be about 22 tweets per day. In the future I will look into making it more likely to tweet at certain times of day. 
+
+Each controller has a list of PostComposers. This will later give me the ability to tweet different things. For example: spontaneously tweet a fortune 40% of the time and post a chatom 60% of the time. The controller object can also decide if it should respond to a post_object based on its content. For example here is the ReplyController that only handles objects which mention <notextile>@bucketobytes</notextile>.
+
+{% highlight python linenos %}
+class ReplyController(post.PostController):
+  def __init__(self, post_composers = [], postControllers = None, current_user=None):
+    post.PostController(post_composers, postControllers, current_user)
+    self.post_composers = post_composers
+    self.current_user = current_user
+    self.reply_ids = { }
+
+  def can_handle_object(self, post_object):
+    if self.isCurrentUser(post_object):
+      return False
+    if not post_object.has_key('entities'):
+      return False
+    if not post_object['entities'].has_key('user_mentions'):
+      return False
+    for user_mention in post_object['entities']['user_mentions']:
+      if user_mention['id_str'] == self.current_user['id_str']:
+        return True
+    return False
+
+  def probabilityToPost(self, post_object, seconds_from_midnight, time_step, simulate=False):
+    if self.isCurrentUser(post_object):
+      return 0
+    if not post_object.has_key('entities'):
+      return 0
+    if not post_object['entities'].has_key('user_mentions'):
+      return 0
+    for user_mention in post_object['entities']['user_mentions']:
+      if user_mention['id_str'] == self.current_user['id_str']:
+        return self.probabilityForId(post_object, seconds_from_midnight, time_step)
+    return 0
+
+  def probabilityForId(self, post_object, seconds_from_midnight, time_step):
+    if not post_object.has_key('user'):
+      return 0
+    if not post_object['user'].has_key('id_str'):
+      return 0
+    user_id = post_object['user']['id_str']
+    if not self.reply_ids.has_key(user_id):
+      self.reply_ids[user_id] = { 'probability' : 1, 'first_reply' : datetime.today(), 'last_attempt' : datetime.min }
+
+    current_datetime = datetime.today()
+    if (current_datetime - self.reply_ids[user_id]['first_reply']).seconds > 1:#60*60*24:
+      self.reply_ids[user_id] = { 'probability' : 1, 'first_reply' : datetime.today(), 'last_attempt' : datetime.min }
+      return 1
+
+    probability = self.reply_ids[user_id]['probability']
+    delta = (datetime.today() - self.reply_ids[user_id]['last_attempt'])
+    if delta.microseconds < 500:
+      probability = 0
+
+    self.reply_ids[user_id]['last_attempt'] = datetime.today()
+
+    return probability
+
+  def postUpdateStatus(self, api, post_object):
+    user_id = post_object['user']['id_str']
+    probability = float(self.reply_ids[user_id]['probability'])
+    self.reply_ids[user_id]['probability'] = probability * 0.5
+{% endhighlight %}
+
+Finally, the flow trickles down to a PostComposer which creates the actual tweet. Here is the FortuneComposer
+
+{% highlight python linenos %}
+class FortuneComposer(PostComposer):
+  def __init__(self):
+    self.fortunes = open('fortunes').read().split('\n%\n')
+    for fortune in self.fortunes:
+      if len(fortune) > 140:
+        self.fortunes.remove(fortune)
+
+  def compose(self, api, post_object, simulate):
+    fortune = None
+    screen_name = None
+    if post_object.has_key('user'):
+      if post_object['user'].has_key('screen_name'):
+        screen_name = post_object['user']['screen_name']
+    if screen_name != None:
+      fortune = self.chooseFortune(140, screen_name)
+    else:
+      fortune = self.chooseFortune()
+    if fortune == None:
+      return None
+    if simulate:
+      return fortune
+    if post_object.has_key('id_str') and screen_name != None:
+      return api.updateStatus(status=fortune, in_reply_to_status_id=post_object['id_str'])
+    else:
+      return api.updateStatus(status=fortune)
+
+  def chooseFortune(self, max_len=140, screen_name=None):
+    fortune = ''
+    if screen_name != None:
+      fortune += '@' + screen_name + ' '
+      max_len -= len(fortune)
+    tmp_fortune = random.choice(self.fortunes)
+    count = 0
+    while len(tmp_fortune) > max_len:
+      if count > 1000:
+        return None
+      tmp_fortune = random.choice(self.fortunes)
+      count += 1
+    fortune += tmp_fortune
+    return fortune
+{% endhighlight %}
+
+This should be pretty self explanatory. It chooses a random fortune, prepending a screen name at the beginning if it is constructing a reply. It then ensures that the tweet will fit in the allocated 140 characters, and finally uses the provided Twython api object to send it to twitter.
+
+To sum everything up, I feel that I have a nice implementation of a twitter bot that I can expand on down the line. It should be relatively easy to add new actions as I think of them. So why not give it a try and send "@bucketobytes":https://twitter.com/bucketobytes an <notextile>@mention</notextile>?
