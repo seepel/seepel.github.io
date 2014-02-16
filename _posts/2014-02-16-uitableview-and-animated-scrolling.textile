@@ -1,0 +1,23 @@
+---
+layout: post
+title: UITableView and Animated Scrolling
+subtitle: Sometimes things that should be obvious, aren't so obvious
+image: tableview
+---
+
+<h4>Animating UITableView Can Bite You in the Ass</h4>
+UITableView and CoreAnimation don't mix well. If you connect the dots, it's pretty easy to understand, but I've never seen this explicitly stated anywhere. I figured this would make for a nice simple blog post, that might save some time for someone.
+
+A while ago, I was working with a particular animation on a UITableView and ran into some trouble. The thing was, I wanted to scroll the table view, but still have control over the final contentOffset. I finally decided to dig into the table view's setContentOffset: method and was a little surprised by what I found. It turns out that after calling setContentOffset:animated: the table view will essentially call setContentOffset: several times with a timer until it reaches the final contentOffset. At first I said, "Wait, this isn't how that is supposed to work! With CoreAnimation you set the final value, and the animation is taken care of in between!". After some thought, I had an "Oh, duh!" moment, and it was pretty obvious that a table view just can't work like that. To demonstrate I made a "github project":https://github.com/seepel/TableViewScrollingDemo to demonstrate what's going on.
+
+In the demo, whenever the contentOffset of the table view is updated the title in the navigation bar is updated with the y value. Scroll to the bottom and tap the status bar to have the table view scroll to the top with setContentOffset:animated:. Then scroll to the bottom again and tap the button in the toolbar to scroll to the top of the table view with core animation.
+
+<h4>-[UITableView setContentOffset:animated:]</h4>
+So what's going on with UITableView? Why does it manually call setContentOffset: rather than using core animation? It's pretty simple actually. As you probably already knew, a table view only actually keeps as many cells on screen as it needs to display. When you scroll, it dequeues cells that fall of the screen, and inserts them as needed. Well, it will also have to do this in setContentOffset:animated:.
+
+This of course has some consequences for the developer that may or may not be obvious. The first, is that scrolling from the bottom of the table view to the top of the table view can become difficult to do. Even when a user scrolls fairly quickly, it is unlikely that you will have to reconfigure an entire screen's worth of cells at a time. However, when programatically scrolling you might have to do this on each frame. This can make the programatic scroll feel really janky.
+
+The second consequence is that it can be difficult to fine tune things. For example, maybe you call [UITableView scrollToRowAtIndexPath:atScrollPosition:animated:] but you have an overlaying view that the table view doesn't know about. Another more painful example is that if a view inside one of your table view cells becomes first responder, the table view may very well decide to scroll the table view for you (whether you want it to or not). UIScrollView does have some delegate methods that can help you here, but you can run into trouble if you're doing anything non-standard.
+
+<h4>-[UIView animateWithDuration:completion:]</h4>
+Ok so what happens if you call some Core Animation function to set the contentOffset? For simplicity, let's say that none of the table view cells will remain in the view after the animation is finished. When you call your animation the table view's contentOffset is immediately set to it's new value. It will remove all of the current cells from the view, and insert them for the cells that will be visible after the animation. Then it will run the animation because you are essentially setting the bounds of the table view. So if you are sure that changing the contentOffset won't affect any of your visible cells, this can be easier to handle.
