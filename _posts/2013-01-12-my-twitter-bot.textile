@@ -1,19 +1,22 @@
 ---
 layout: post
 title: My New Twitter Bot
+subtitle: Automatted Tweeting for Fun and Not Profit
+image: robot
+image_credit: http://www.flickr.com/photos/johngreenaway/3356358479/
 ---
 
-<h3>Something a Little Bit Different</h3>
+<h4>Something a Little Bit Different</h4>
 Now that I have updated my blog and gotten the "Obligatory Blogging Like a Hacker Post":{% post_url 2013-01-09-obligatory-blogging-like-a-hacker-post %} out of the way, I would like to introduce you to "@bucketobytes":https://twitter.com/bucketobytes. <notextile>@bucketobytes</notextile> is my new twitter bot. Before we get into the details about him, I'd like to talk about his inspiration. As I was sorting through my RSS feeds over the holidays I came across "Random Shopper":http://randomshopper.tumblr.com, a bot that Darius Kazemi wrote. Random Shopper is a bot that randomly buys Darius presents on Amazon. I thought "Well that is just a really cool idea, I wish I had thought of it". I then went on a hunt for other bots and came across "@ticbot":https://twitter.com/TicBot and "a few others":http://mashable.com/2012/07/22/funny-twitter-bots/. So I decided I wanted to try my hand at such a thing. So I set out on a quest to build a twitter spam bot, that (hopefully) wouldn't actually do any spamming.<!-- more -->
 
-<h3>What Should a Twitter Bot Do?</h3>
+<h4>What Should a Twitter Bot Do?</h4>
 I have grand plans for <notextile>@bucketobytes</notextile>, but to start off with I wanted to keep things simple to ensure that I would actually get him out there. I decided that the bare minimum was that he should follow people that follow him, reply to <notextile>@mentions</notextile>, and tweet randomly. As far as content, I came across "this github repository":https://github.com/bmc/fortunes that contains a vast number of fortunes. After pairing down the content to the tweet sized fortunes there are about 2000 available. I figured that would be a good start for <notextile>@bucketobytes</notextile> so I blatantly stole them and put them in my own project (thank you "@brianclapper":https://twitter.com/brianclapper!). In the future I have been thinking about incorporating "chatoms":http://chatoms.com and I'm sure there are other countless resources that I can look into. I thought about other more useful content such as: replying to a mention that includes a movie title with the times that movie was playing. Upon reconsideration, however, I think that the guiding principle I will follow is that <notextile>@bucketobytes</notextile> should not really do anything all that useful.
 
 As of this writing the current implementation of <notextile>@bucketobytes</notextile> is as follows. If you follow him, he will follow you back. If you <notextile>@mention</notextile> him, he will <notextile>@reply</notextile> to you with a random fortune. If you <notextile>@mention</notextile> him with the hash tag *#cc* he will retweet what you've sent him. And finally he will spontaneously tweet fortunes at random approximately 22 times per day. There are some other implementations I am considering in the future. The first is a mechanism that you can submit suggestions, perhaps with the hashtag *#iwantbucketobytesto*. Perhaps have him lie, for example subscribe to a "Rotten Tomatoes":http://www.rottentomatoes.com RSS feed and <notextile>@bucketobytes</notextile> will say how much he loved such and such movie. I'm excited to implement new ideas as they occur to me. You can find an up to date list of <notextile>@bucketobytes</notextile> actions here: "<notextile>@bucketobytes</notextile> Info Page":/bucketobytes/.
 
 I will now outline his construction, so if you aren't into reading a lot of code feel free to duck out now.
 
-<h3>The Guts of a Twitter Bot</h3>
+<h4>The Guts of a Twitter Bot</h4>
 You can find the source code for <notextile>@bucketobytes</notextile> on GitHub here: "seepel/bucketobytes":https://github.com/seepel/bucketobytes. 
 
 *Disclaimer:* I would ask that you not do anything nefarious with my code, but I imagine there is other more advanced software for real spam bots. If you arrived at my site looking for a spam bot implementation, you will probably be better served to look elsewhere. 

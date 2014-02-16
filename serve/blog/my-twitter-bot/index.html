@@ -1,0 +1,312 @@
+<!DOCTYPE HTML>
+
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>My New Twitter Bot</title>
+    <meta name="description" content="Twitter Bootstrap Basic Tab Based Navigation Example"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <link href="/css/custom.css" rel="stylesheet"/>
+    <link href="/webfonts/ss-social.css" rel="stylesheet"/>
+    <script type="text/javascript">
+      var _gaq = _gaq || [];
+      _gaq.push(['_setAccount', 'UA-29573574-1']);
+      _gaq.push(['_trackPageview']);
+      (function() {
+        var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+        ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+        var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+      })();
+    </script>
+  </head>
+  <body>
+    <header>
+
+    <h1><a class="inactive" href="/">SEANP<strong>LYNCH</strong></a></h1>
+
+    <div class="navbar">
+    <div class="navbar-inner">
+    <div class="container">
+    <ul class="nav">
+
+      <li><a class="active" href="/blog">BLOG</a></li>
+
+      <li><a href="/contact">CONTACT</a></li>
+
+      <li class="ss-icon"><a href="/rss.xml" class="ss-icon">RSS</a></li>
+
+    </ul>
+    </div>
+    </div>
+    </div>
+    </header>
+    <div class="content">
+  <div id="post">
+    <p class="meta_date">
+      <span class="day">12</span>
+      <span class="calendar">
+      <span class="month">Jan</span>
+      <span class="year">2013</span>
+    </span>
+    </p>
+    <h2>My New Twitter Bot</h2>
+    <h3>Something a Little Bit Different</h3>
+<p>Now that I have updated my blog and gotten the <a href="/blog/obligatory-blogging-like-a-hacker-post">Obligatory Blogging Like a Hacker Post</a> out of the way, I would like to introduce you to <a href="https://twitter.com/bucketobytes">@bucketobytes</a>. @bucketobytes is my new twitter bot. Before we get into the details about him, I&#8217;d like to talk about his inspiration. As I was sorting through my <span class="caps">RSS</span> feeds over the holidays I came across <a href="http://randomshopper.tumblr.com">Random Shopper</a>, a bot that Darius Kazemi wrote. Random Shopper is a bot that randomly buys Darius presents on Amazon. I thought &#8220;Well that is just a really cool idea, I wish I had thought of it&#8221;. I then went on a hunt for other bots and came across <a href="https://twitter.com/TicBot">@ticbot</a> and <a href="http://mashable.com/2012/07/22/funny-twitter-bots/">a few others</a>. So I decided I wanted to try my hand at such a thing. So I set out on a quest to build a twitter spam bot, that (hopefully) wouldn&#8217;t actually do any spamming.<!-- more --></p>
+<h3>What Should a Twitter Bot Do?</h3>
+<p>I have grand plans for @bucketobytes, but to start off with I wanted to keep things simple to ensure that I would actually get him out there. I decided that the bare minimum was that he should follow people that follow him, reply to @mentions, and tweet randomly. As far as content, I came across <a href="https://github.com/bmc/fortunes">this github repository</a> that contains a vast number of fortunes. After pairing down the content to the tweet sized fortunes there are about 2000 available. I figured that would be a good start for @bucketobytes so I blatantly stole them and put them in my own project (thank you <a href="https://twitter.com/brianclapper">@brianclapper</a>!). In the future I have been thinking about incorporating <a href="http://chatoms.com">chatoms</a> and I&#8217;m sure there are other countless resources that I can look into. I thought about other more useful content such as: replying to a mention that includes a movie title with the times that movie was playing. Upon reconsideration, however, I think that the guiding principle I will follow is that @bucketobytes should not really do anything all that useful.</p>
+<p>As of this writing the current implementation of @bucketobytes is as follows. If you follow him, he will follow you back. If you @mention him, he will @reply to you with a random fortune. If you @mention him with the hash tag <strong>#cc</strong> he will retweet what you&#8217;ve sent him. And finally he will spontaneously tweet fortunes at random approximately 22 times per day. There are some other implementations I am considering in the future. The first is a mechanism that you can submit suggestions, perhaps with the hashtag <strong>#iwantbucketobytesto</strong>. Perhaps have him lie, for example subscribe to a <a href="http://www.rottentomatoes.com">Rotten Tomatoes</a> <span class="caps">RSS</span> feed and @bucketobytes will say how much he loved such and such movie. I&#8217;m excited to implement new ideas as they occur to me. You can find an up to date list of @bucketobytes actions here: <a href="/bucketobytes/">@bucketobytes Info Page</a>.</p>
+<p>I will now outline his construction, so if you aren&#8217;t into reading a lot of code feel free to duck out now.</p>
+<h3>The Guts of a Twitter Bot</h3>
+<p>You can find the source code for @bucketobytes on GitHub here: <a href="https://github.com/seepel/bucketobytes">seepel/bucketobytes</a>.</p>
+<p><strong>Disclaimer:</strong> I would ask that you not do anything nefarious with my code, but I imagine there is other more advanced software for real spam bots. If you arrived at my site looking for a spam bot implementation, you will probably be better served to look elsewhere.</p>
+<h4>To Python or Not to Python</h4>
+<p>I decided to use python to write my bot as I am very familiar with it from my Physics days, and it would be easy to get things up and running. For the twitter api I tried a few different GitHub projects and decided on <a href="https://github.com/ryanmcgrath/twython">Twython</a>. Twython ended up being the most robust and gave me the most freedom while taking away as many headaches as possible. Other libraries were very good, but ended up being a bit restrictive. In order to get things up and running I did have to modify things quite a bit. At the time of writing Twython was still primarily based in the v1.0 twitter api, and there are some problems with the most recent version of the <a href="http://docs.python-requests.org/en/latest/">requests</a> module, in particular dealing with oauth. So I updated all the twitter endpoints to v1.1 and modified the streaming portion of Twython to handle the new oauth user endpoint. You can find my changes here: <a href="https://github.com/seepel/twython">seepel/Twython</a>. I didn&#8217;t end up pushing my changes back to the main repository as my changes are a bit of a hack at the moment. I may come back and revisit this if someone else doesn&#8217;t beat me to it.</p>
+<h4>@bucketobytes: A history</h4>
+<p>My first <a href="https://github.com/seepel/bucketobytes/tree/090f3e374b9ac63d09d38a687dc492d97ed067b4">implementation</a> was rather fragile and relied entirely upon the <span class="caps">REST</span> <span class="caps">API</span>. What that meant was that everything that was done, had to be done in discrete chunks. The script would be run periodically, and the bot would have to catch up from its most recent state. Since it was just a prototype I was saving the most recent tweet id in a text file, and stopping processing whenever I hit that tweet. As one would guess this was problematic, if there was ever a problem with that text file @bucketobytes would get out of sync, and potentially re-run any number of actions. This would be annoying for anyone that interacted with him. From here I decided to move to the streaming <span class="caps">API</span>.</p>
+<p>The <a href="https://github.com/seepel/bucketobytes/tree/74d0dec4851cf56f39fd7afbf947b4bf7c4bf499">streaming</a> version was a bit better. It consisted of two scripts: the first was a script that would listen to the user stream and respond accordingly, the second was a separate script that when run would post a random fortune. So the respond script would act as a long running process to respond to actions, and the post script would be run from a crontab periodically. This process worked a lot better, and was stable enough to let run for a while. But I had grander plans, what if I wanted to incorporate the random posting into the replying and have finer control over how many tweets @bucketobytes was making. This method also led to these scripts being rather lengthy, it would be nice to refactor things.</p>
+<p>So I setup a <a href="https://github.com/seepel/bucketobytes/tree/c9f46dc699c0a9e34be3c69a0aa48dc313233cb4">modular</a> design. To do this I had to learn about threading in python. Luckily I found <a href="http://www.ibm.com/developerworks/aix/library/au-threadingpython/">this article</a> over at <span class="caps">IBM</span> that was dead simple to understand. The script is centered around two long running threads. Of course the first is listening to the user streaming endpoint to trigger replies and follows. Setting up the stream didn&#8217;t change much from the respond script of the previous iteration. What changed was how I funneled input into twitter. When a json object cames down from the user stream, it is placed into a queue to be processed. To process the pending queue, I setup a Thread class PostScheduler that would be responsible for the coordination of posting and following. Here is how that class is setup.</p>
+<div class="highlight"><pre><code class="python"><span class="k">class</span> <span class="nc">PostScheduler</span><span class="p">(</span><span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="p">):</span>
+  <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">api</span><span class="p">,</span> <span class="n">simulate</span><span class="o">=</span><span class="bp">False</span><span class="p">,</span> <span class="n">controllers</span><span class="o">=</span><span class="bp">None</span><span class="p">,</span> <span class="n">default_time_to_sleep</span><span class="o">=</span><span class="mi">60</span><span class="p">):</span>
+    <span class="n">threading</span><span class="o">.</span><span class="n">Thread</span><span class="o">.</span><span class="n">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">api</span> <span class="o">=</span> <span class="n">api</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">controllers</span> <span class="o">=</span> <span class="n">controllers</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">queue</span> <span class="o">=</span> <span class="n">Queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">post_objects</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">default_time_to_sleep</span> <span class="o">=</span> <span class="n">default_time_to_sleep</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">setDaemon</span><span class="p">(</span><span class="bp">True</span><span class="p">)</span>
+</code></pre></div><p>The class has an instance of a Twython object in the api variable, a list of controllers (we&#8217;ll get to that in a bit), a Queue, and a list of post_objects. The heartbeat of the bot is determined by the run method.</p>
+<div class="highlight"><pre><code class="python"><span class="k">def</span> <span class="nf">run</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="k">while</span> <span class="bp">True</span><span class="p">:</span>
+      <span class="n">queue_object</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+      
+      <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">empty</span><span class="p">():</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">default_time_to_sleep</span><span class="p">)</span>
+
+      <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">queue_object</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="nb">long</span><span class="p">,</span> <span class="nb">float</span><span class="p">)):</span>
+        <span class="n">time_to_sleep</span> <span class="o">=</span> <span class="n">queue_object</span>
+        <span class="k">if</span> <span class="n">time_to_sleep</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
+          <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="n">time_to_sleep</span><span class="p">)</span>
+          <span class="bp">self</span><span class="o">.</span><span class="n">evaluate_tweets</span><span class="p">()</span>
+      <span class="k">else</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">post_objects</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">queue_object</span><span class="p">)</span>
+
+      <span class="bp">self</span><span class="o">.</span><span class="n">queue</span><span class="o">.</span><span class="n">task_done</span><span class="p">()</span>
+</code></pre></div><p>What happens here is that the scheduler will remove the first item in the queue. If that item is a number, then that signals to the scheduler that it needs to wait before it handles more actions. If that object is not a number, then it is assumed that it is a dictionary object representing some twitter output (post_object) that needs to be handled. For example: a json object representing a mention from the streaming endpoint. That dictionary is then appended to post_objects for later processing by evaluate_tweets().</p>
+<div class="highlight"><pre><code class="python">  <span class="k">def</span> <span class="nf">evaluate_tweets</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="n">seconds_from_midnight</span> <span class="o">=</span> <span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">today</span><span class="p">()</span> <span class="o">-</span> <span class="n">datetime</span><span class="o">.</span><span class="n">min</span><span class="p">)</span><span class="o">.</span><span class="n">seconds</span>
+    <span class="n">post_objects_to_remove</span> <span class="o">=</span> <span class="p">[]</span>
+
+    <span class="k">for</span> <span class="n">post_object</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">post_objects</span><span class="p">:</span>
+      <span class="n">can_be_handled</span> <span class="o">=</span> <span class="bp">False</span>
+      <span class="k">for</span> <span class="n">controller</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">controllers</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">controller</span><span class="o">.</span><span class="n">can_handle_object</span><span class="p">(</span><span class="n">post_object</span><span class="p">):</span>
+          <span class="n">can_be_handled</span> <span class="o">=</span> <span class="bp">True</span>
+          <span class="k">break</span>
+      <span class="k">if</span> <span class="ow">not</span> <span class="n">can_be_handled</span><span class="p">:</span>
+        <span class="n">post_objects_to_remove</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">post_object</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">post_object</span> <span class="ow">in</span> <span class="n">post_objects_to_remove</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">post_objects</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">post_object</span><span class="p">)</span>
+
+    <span class="k">for</span> <span class="n">controller</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">controllers</span><span class="p">:</span>
+      <span class="n">chosen_object</span> <span class="o">=</span> <span class="bp">None</span>
+      <span class="k">for</span> <span class="n">post_object</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">post_objects</span><span class="p">:</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">evaluate_tweet</span><span class="p">(</span><span class="n">controller</span><span class="p">,</span> <span class="n">post_object</span><span class="p">,</span> <span class="n">seconds_from_midnight</span><span class="p">):</span>
+          <span class="n">chosen_object</span> <span class="o">=</span> <span class="n">post_object</span>
+          <span class="k">break</span>
+      <span class="k">if</span> <span class="n">chosen_object</span> <span class="o">!=</span> <span class="bp">None</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">post_objects</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">chosen_object</span><span class="p">)</span>
+        <span class="k">break</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">evaluate_tweet</span><span class="p">(</span><span class="n">controller</span><span class="p">,</span> <span class="p">{</span> <span class="p">},</span> <span class="n">seconds_from_midnight</span><span class="p">)</span>
+</code></pre></div><p>The evaluate_tweets() method is where the controllers come in. The controllers allow the whole bot to be configured. The first thing evaluate_tweets does, is figure how many seconds it has been since midnight. This way, one can configure the action to be dependent on the time of day. The next thing it does is for each post_object, determine if one of its controllers can handle the object, if not the object is removed. The problem is that there is a lot of stuff that comes in from the user stream that is not a mention or follow, this sequence removes the junk that will never be responded to. The next chunk of code runs through all the controllers and gives them an opportunity to act on the post_object via evaluate_tweet. If a controller handles the object, it is of course removed from the list of post_objects to be handled. The very last line evaluates a post_object being represented by an empty dictionary. This is how spontaneous tweets are generated.</p>
+<div class="highlight"><pre><code class="python">  <span class="k">def</span> <span class="nf">evaluate_tweet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">controller</span><span class="p">,</span> <span class="n">post_object</span><span class="p">,</span> <span class="n">seconds_from_midnight</span><span class="p">):</span>
+    <span class="n">probability</span> <span class="o">=</span> <span class="n">controller</span><span class="o">.</span><span class="n">probabilityToPost</span><span class="p">(</span><span class="n">post_object</span><span class="p">,</span> <span class="n">seconds_from_midnight</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">default_time_to_sleep</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulate</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">probability</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="k">return</span> <span class="bp">False</span>
+    <span class="n">steps</span> <span class="o">=</span> <span class="mf">10000.0</span>
+    <span class="n">random_number</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">randrange</span><span class="p">(</span><span class="n">steps</span><span class="p">)</span><span class="o">/</span><span class="n">steps</span>
+    <span class="k">if</span> <span class="n">random_number</span> <span class="o">&lt;=</span> <span class="n">probability</span><span class="p">:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">posts</span> <span class="o">+=</span> <span class="mi">1</span>
+      <span class="k">print</span> <span class="n">controller</span>
+      <span class="k">print</span> <span class="n">controller</span><span class="o">.</span><span class="n">composePost</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">api</span><span class="p">,</span> <span class="n">post_object</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulate</span><span class="p">)</span>
+      <span class="n">controller</span><span class="o">.</span><span class="n">postUpdateStatus</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">api</span><span class="p">,</span> <span class="n">post_object</span><span class="p">)</span>
+      <span class="k">return</span> <span class="bp">True</span>
+    <span class="k">return</span> <span class="bp">False</span>
+</code></pre></div><p>The evaluate_tweet() method asks a controller for the probability to respond to an object based on the object, the time of day, and the size of the time step that governs the schedulers heartbeat. The method then generates a random number and if the number is less than the probability, prompts the controller to respond to the object. This allows a controller to do something such as make tweets happen at certain times of day, while still being somewhat random. The second thing that is helpful about this method is that it allows a controller to back off on certain actions. For example, say there is a controller that handles replies, and someone decides to spam the account with 1000 mentions. If my bot were to respond to all those mentions at once, it would probably hit the twitter limit and potentially get blocked. This allows the bot to cut certain users off from replies.</p>
+<p>Now that we see how the bot handles the flow of tweets, let&#8217;s talk controllers. Controllers are responsible for determining how and when the bot should tweet. For example there is a PostController that is responsible for spontaneously posting tweets, the ReplyController is responsible for dealing with mentions, the RetweetController is responsible for handling instances where someone retweets one of @bucketobytes tweets, and etc. Here is the PostController:</p>
+<div class="highlight"><pre><code class="python"><span class="k">class</span> <span class="nc">PostController</span><span class="p">(</span><span class="nb">object</span><span class="p">):</span>
+  <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">post_composers</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">postControllers</span> <span class="o">=</span> <span class="bp">None</span><span class="p">,</span> <span class="n">current_user</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">post_composers</span> <span class="o">=</span> <span class="n">post_composers</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">current_user</span> <span class="o">=</span> <span class="n">current_user</span>
+
+  <span class="k">def</span> <span class="nf">can_handle_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">post_object</span><span class="p">):</span>
+    <span class="k">return</span> <span class="nb">len</span><span class="p">(</span><span class="n">post_object</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span>
+
+  <span class="k">def</span> <span class="nf">probabilityToPost</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">post_object</span><span class="p">,</span> <span class="n">seconds_from_midnight</span><span class="p">,</span> <span class="n">time_step</span><span class="p">,</span> <span class="n">simulate</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">post_object</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+      <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">isCurrentUser</span><span class="p">(</span><span class="n">post_object</span><span class="p">):</span>
+      <span class="k">return</span> <span class="mi">0</span>
+    <span class="c"># flat distribution 22 tweets per day</span>
+    <span class="n">one_day</span> <span class="o">=</span> <span class="mf">60.</span><span class="o">*</span><span class="mf">60.</span><span class="o">*</span><span class="mf">24.</span><span class="o">/</span><span class="nb">float</span><span class="p">(</span><span class="n">time_step</span><span class="p">)</span>
+    <span class="k">if</span> <span class="n">simulate</span><span class="p">:</span>
+      <span class="n">one_day</span> <span class="o">/=</span> <span class="mi">60</span>
+    <span class="k">return</span> <span class="mf">22.</span><span class="o">/</span><span class="n">one_day</span>
+
+  <span class="k">def</span> <span class="nf">isCurrentUser</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">post_object</span><span class="p">):</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_user</span> <span class="o">==</span> <span class="bp">None</span><span class="p">:</span>
+      <span class="k">print</span> <span class="s">&#39;No current user skipping&#39;</span>
+      <span class="k">return</span> <span class="bp">False</span>
+    <span class="c"># don&#39;t respond if the tweet belongs to the current user -- would be infinite loop!</span>
+    <span class="k">if</span> <span class="n">post_object</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;user&#39;</span><span class="p">):</span>
+      <span class="k">if</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;user&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;id_str&#39;</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;user&#39;</span><span class="p">][</span><span class="s">&#39;id_str&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_user</span><span class="p">[</span><span class="s">&#39;id_str&#39;</span><span class="p">]</span>
+    <span class="k">return</span> <span class="bp">False</span>
+
+  <span class="k">def</span> <span class="nf">choosePostComposer</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="n">post_composers</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">total_percent</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">post_composer</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">post_composers</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">post_composer</span><span class="o">.</span><span class="n">percent</span><span class="p">()</span> <span class="o">==</span> <span class="mi">100</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">post_composer</span>
+      <span class="n">post_composers</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">post_composer</span><span class="p">)</span>
+      <span class="n">total_percent</span> <span class="o">+=</span> <span class="n">post_composer</span><span class="o">.</span><span class="n">percent</span><span class="p">()</span>
+    <span class="n">probability</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">randrange</span><span class="p">(</span><span class="n">total_percent</span><span class="p">)</span>
+    <span class="n">threshold</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">post_composer</span> <span class="ow">in</span> <span class="n">post_composers</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">threshold</span> <span class="o">&lt;=</span> <span class="n">post_composer</span><span class="o">.</span><span class="n">percent</span><span class="p">():</span>
+        <span class="k">return</span> <span class="n">post_composer</span>
+      <span class="n">threshold</span> <span class="o">+=</span> <span class="n">post_composer</span><span class="o">.</span><span class="n">percent</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">post_composer</span>
+
+  <span class="k">def</span> <span class="nf">composePost</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">api</span><span class="p">,</span> <span class="n">post_object</span><span class="p">,</span> <span class="n">simulate</span><span class="p">):</span>
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">choosePostComposer</span><span class="p">()</span><span class="o">.</span><span class="n">compose</span><span class="p">(</span><span class="n">api</span><span class="p">,</span> <span class="n">post_object</span><span class="p">,</span> <span class="n">simulate</span><span class="p">)</span>
+</code></pre></div><p>The post controller handles post objects that are empty dictionaries, this happens at the end of each scheduler cycle. Thus far, it has a constant probability to post such that the average should be about 22 tweets per day. In the future I will look into making it more likely to tweet at certain times of day.</p>
+<p>Each controller has a list of PostComposers. This will later give me the ability to tweet different things. For example: spontaneously tweet a fortune 40% of the time and post a chatom 60% of the time. The controller object can also decide if it should respond to a post_object based on its content. For example here is the ReplyController that only handles objects which mention @bucketobytes.</p>
+<div class="highlight"><pre><code class="python"><span class="k">class</span> <span class="nc">ReplyController</span><span class="p">(</span><span class="n">post</span><span class="o">.</span><span class="n">PostController</span><span class="p">):</span>
+  <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">post_composers</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">postControllers</span> <span class="o">=</span> <span class="bp">None</span><span class="p">,</span> <span class="n">current_user</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="n">post</span><span class="o">.</span><span class="n">PostController</span><span class="p">(</span><span class="n">post_composers</span><span class="p">,</span> <span class="n">postControllers</span><span class="p">,</span> <span class="n">current_user</span><span class="p">)</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">post_composers</span> <span class="o">=</span> <span class="n">post_composers</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">current_user</span> <span class="o">=</span> <span class="n">current_user</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span> <span class="o">=</span> <span class="p">{</span> <span class="p">}</span>
+
+  <span class="k">def</span> <span class="nf">can_handle_object</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">post_object</span><span class="p">):</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">isCurrentUser</span><span class="p">(</span><span class="n">post_object</span><span class="p">):</span>
+      <span class="k">return</span> <span class="bp">False</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">post_object</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;entities&#39;</span><span class="p">):</span>
+      <span class="k">return</span> <span class="bp">False</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;entities&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;user_mentions&#39;</span><span class="p">):</span>
+      <span class="k">return</span> <span class="bp">False</span>
+    <span class="k">for</span> <span class="n">user_mention</span> <span class="ow">in</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;entities&#39;</span><span class="p">][</span><span class="s">&#39;user_mentions&#39;</span><span class="p">]:</span>
+      <span class="k">if</span> <span class="n">user_mention</span><span class="p">[</span><span class="s">&#39;id_str&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_user</span><span class="p">[</span><span class="s">&#39;id_str&#39;</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">True</span>
+    <span class="k">return</span> <span class="bp">False</span>
+
+  <span class="k">def</span> <span class="nf">probabilityToPost</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">post_object</span><span class="p">,</span> <span class="n">seconds_from_midnight</span><span class="p">,</span> <span class="n">time_step</span><span class="p">,</span> <span class="n">simulate</span><span class="o">=</span><span class="bp">False</span><span class="p">):</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">isCurrentUser</span><span class="p">(</span><span class="n">post_object</span><span class="p">):</span>
+      <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">post_object</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;entities&#39;</span><span class="p">):</span>
+      <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;entities&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;user_mentions&#39;</span><span class="p">):</span>
+      <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">for</span> <span class="n">user_mention</span> <span class="ow">in</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;entities&#39;</span><span class="p">][</span><span class="s">&#39;user_mentions&#39;</span><span class="p">]:</span>
+      <span class="k">if</span> <span class="n">user_mention</span><span class="p">[</span><span class="s">&#39;id_str&#39;</span><span class="p">]</span> <span class="o">==</span> <span class="bp">self</span><span class="o">.</span><span class="n">current_user</span><span class="p">[</span><span class="s">&#39;id_str&#39;</span><span class="p">]:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">probabilityForId</span><span class="p">(</span><span class="n">post_object</span><span class="p">,</span> <span class="n">seconds_from_midnight</span><span class="p">,</span> <span class="n">time_step</span><span class="p">)</span>
+    <span class="k">return</span> <span class="mi">0</span>
+
+  <span class="k">def</span> <span class="nf">probabilityForId</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">post_object</span><span class="p">,</span> <span class="n">seconds_from_midnight</span><span class="p">,</span> <span class="n">time_step</span><span class="p">):</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">post_object</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;user&#39;</span><span class="p">):</span>
+      <span class="k">return</span> <span class="mi">0</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;user&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;id_str&#39;</span><span class="p">):</span>
+      <span class="k">return</span> <span class="mi">0</span>
+    <span class="n">user_id</span> <span class="o">=</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;user&#39;</span><span class="p">][</span><span class="s">&#39;id_str&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="n">user_id</span><span class="p">):</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span><span class="p">[</span><span class="n">user_id</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span> <span class="s">&#39;probability&#39;</span> <span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;first_reply&#39;</span> <span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">today</span><span class="p">(),</span> <span class="s">&#39;last_attempt&#39;</span> <span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">min</span> <span class="p">}</span>
+
+    <span class="n">current_datetime</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">today</span><span class="p">()</span>
+    <span class="k">if</span> <span class="p">(</span><span class="n">current_datetime</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span><span class="p">[</span><span class="n">user_id</span><span class="p">][</span><span class="s">&#39;first_reply&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">seconds</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span><span class="c">#60*60*24:</span>
+      <span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span><span class="p">[</span><span class="n">user_id</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span> <span class="s">&#39;probability&#39;</span> <span class="p">:</span> <span class="mi">1</span><span class="p">,</span> <span class="s">&#39;first_reply&#39;</span> <span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">today</span><span class="p">(),</span> <span class="s">&#39;last_attempt&#39;</span> <span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">min</span> <span class="p">}</span>
+      <span class="k">return</span> <span class="mi">1</span>
+
+    <span class="n">probability</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span><span class="p">[</span><span class="n">user_id</span><span class="p">][</span><span class="s">&#39;probability&#39;</span><span class="p">]</span>
+    <span class="n">delta</span> <span class="o">=</span> <span class="p">(</span><span class="n">datetime</span><span class="o">.</span><span class="n">today</span><span class="p">()</span> <span class="o">-</span> <span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span><span class="p">[</span><span class="n">user_id</span><span class="p">][</span><span class="s">&#39;last_attempt&#39;</span><span class="p">])</span>
+    <span class="k">if</span> <span class="n">delta</span><span class="o">.</span><span class="n">microseconds</span> <span class="o">&lt;</span> <span class="mi">500</span><span class="p">:</span>
+      <span class="n">probability</span> <span class="o">=</span> <span class="mi">0</span>
+
+    <span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span><span class="p">[</span><span class="n">user_id</span><span class="p">][</span><span class="s">&#39;last_attempt&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">datetime</span><span class="o">.</span><span class="n">today</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="n">probability</span>
+
+  <span class="k">def</span> <span class="nf">postUpdateStatus</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">api</span><span class="p">,</span> <span class="n">post_object</span><span class="p">):</span>
+    <span class="n">user_id</span> <span class="o">=</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;user&#39;</span><span class="p">][</span><span class="s">&#39;id_str&#39;</span><span class="p">]</span>
+    <span class="n">probability</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span><span class="p">[</span><span class="n">user_id</span><span class="p">][</span><span class="s">&#39;probability&#39;</span><span class="p">])</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">reply_ids</span><span class="p">[</span><span class="n">user_id</span><span class="p">][</span><span class="s">&#39;probability&#39;</span><span class="p">]</span> <span class="o">=</span> <span class="n">probability</span> <span class="o">*</span> <span class="mf">0.5</span>
+</code></pre></div><p>Finally, the flow trickles down to a PostComposer which creates the actual tweet. Here is the FortuneComposer</p>
+<div class="highlight"><pre><code class="python"><span class="k">class</span> <span class="nc">FortuneComposer</span><span class="p">(</span><span class="n">PostComposer</span><span class="p">):</span>
+  <span class="k">def</span> <span class="nf">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+    <span class="bp">self</span><span class="o">.</span><span class="n">fortunes</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="s">&#39;fortunes&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">read</span><span class="p">()</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s">&#39;</span><span class="se">\n</span><span class="s">%</span><span class="se">\n</span><span class="s">&#39;</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">fortune</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">fortunes</span><span class="p">:</span>
+      <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">fortune</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">140</span><span class="p">:</span>
+        <span class="bp">self</span><span class="o">.</span><span class="n">fortunes</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">fortune</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">compose</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">api</span><span class="p">,</span> <span class="n">post_object</span><span class="p">,</span> <span class="n">simulate</span><span class="p">):</span>
+    <span class="n">fortune</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="n">screen_name</span> <span class="o">=</span> <span class="bp">None</span>
+    <span class="k">if</span> <span class="n">post_object</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;user&#39;</span><span class="p">):</span>
+      <span class="k">if</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;user&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;screen_name&#39;</span><span class="p">):</span>
+        <span class="n">screen_name</span> <span class="o">=</span> <span class="n">post_object</span><span class="p">[</span><span class="s">&#39;user&#39;</span><span class="p">][</span><span class="s">&#39;screen_name&#39;</span><span class="p">]</span>
+    <span class="k">if</span> <span class="n">screen_name</span> <span class="o">!=</span> <span class="bp">None</span><span class="p">:</span>
+      <span class="n">fortune</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">chooseFortune</span><span class="p">(</span><span class="mi">140</span><span class="p">,</span> <span class="n">screen_name</span><span class="p">)</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="n">fortune</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">chooseFortune</span><span class="p">()</span>
+    <span class="k">if</span> <span class="n">fortune</span> <span class="o">==</span> <span class="bp">None</span><span class="p">:</span>
+      <span class="k">return</span> <span class="bp">None</span>
+    <span class="k">if</span> <span class="n">simulate</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">fortune</span>
+    <span class="k">if</span> <span class="n">post_object</span><span class="o">.</span><span class="n">has_key</span><span class="p">(</span><span class="s">&#39;id_str&#39;</span><span class="p">)</span> <span class="ow">and</span> <span class="n">screen_name</span> <span class="o">!=</span> <span class="bp">None</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">api</span><span class="o">.</span><span class="n">updateStatus</span><span class="p">(</span><span class="n">status</span><span class="o">=</span><span class="n">fortune</span><span class="p">,</span> <span class="n">in_reply_to_status_id</span><span class="o">=</span><span class="n">post_object</span><span class="p">[</span><span class="s">&#39;id_str&#39;</span><span class="p">])</span>
+    <span class="k">else</span><span class="p">:</span>
+      <span class="k">return</span> <span class="n">api</span><span class="o">.</span><span class="n">updateStatus</span><span class="p">(</span><span class="n">status</span><span class="o">=</span><span class="n">fortune</span><span class="p">)</span>
+
+  <span class="k">def</span> <span class="nf">chooseFortune</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">max_len</span><span class="o">=</span><span class="mi">140</span><span class="p">,</span> <span class="n">screen_name</span><span class="o">=</span><span class="bp">None</span><span class="p">):</span>
+    <span class="n">fortune</span> <span class="o">=</span> <span class="s">&#39;&#39;</span>
+    <span class="k">if</span> <span class="n">screen_name</span> <span class="o">!=</span> <span class="bp">None</span><span class="p">:</span>
+      <span class="n">fortune</span> <span class="o">+=</span> <span class="s">&#39;@&#39;</span> <span class="o">+</span> <span class="n">screen_name</span> <span class="o">+</span> <span class="s">&#39; &#39;</span>
+      <span class="n">max_len</span> <span class="o">-=</span> <span class="nb">len</span><span class="p">(</span><span class="n">fortune</span><span class="p">)</span>
+    <span class="n">tmp_fortune</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fortunes</span><span class="p">)</span>
+    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+    <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">tmp_fortune</span><span class="p">)</span> <span class="o">&gt;</span> <span class="n">max_len</span><span class="p">:</span>
+      <span class="k">if</span> <span class="n">count</span> <span class="o">&gt;</span> <span class="mi">1000</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">None</span>
+      <span class="n">tmp_fortune</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">choice</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">fortunes</span><span class="p">)</span>
+      <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+    <span class="n">fortune</span> <span class="o">+=</span> <span class="n">tmp_fortune</span>
+    <span class="k">return</span> <span class="n">fortune</span>
+</code></pre></div><p>This should be pretty self explanatory. It chooses a random fortune, prepending a screen name at the beginning if it is constructing a reply. It then ensures that the tweet will fit in the allocated 140 characters, and finally uses the provided Twython api object to send it to twitter.</p>
+<p>To sum everything up, I feel that I have a nice implementation of a twitter bot that I can expand on down the line. It should be relatively easy to add new actions as I think of them. So why not give it a try and send <a href="https://twitter.com/bucketobytes">@bucketobytes</a> an @mention?</p>
+  </div>
+  <div class="pagination">
+    
+    <a href="/blog/obligatory-blogging-like-a-hacker-post" class="previous"><span class="arrow">← </span>Obligatory Blogging Like a Hacker Post</a>
+    
+    
+    <a href="/blog/so-you-want-to-build-an-rss-reader-part-1" class="next">So, You Want To Build an RSS Reader? - Part 1<span class="arrow"> →</span></a>
+    
+  </div>
+</div>
+
+
+    <footer>
+      <ul class="social horizontal">
+      <li><a href="http://github.com/seepel" class="ss-icon ss-social-circle">githuboctocat</a></li>
+      <li><a href="http://twitter.com/seepel" class="ss-icon ss-social-circle">twitter</a></li>
+      <li><a href="http://www.linkedin.com/pub/sean-lynch/4b/309/997" class="ss-icon ss-social-circle">linkedin</a></li>
+
+      <li><a href="/rss.xml" class="ss-icon ss-social-circle">RSS</a></li>
+
+      </ul>
+      <p class="copyright"> Copyright © Sean Lynch 2013 </p>
+    </footer>
+  </body>
+</html>

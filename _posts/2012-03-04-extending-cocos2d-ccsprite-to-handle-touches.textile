@@ -1,9 +1,12 @@
 ---
 layout: post
 title: Extending cocos2d CCSprite to Handle Touches
+subtitle: I Wanna Touch U, Till We're Stuck Like Glue 
+image: sprite
+image_credit: http://www.flickr.com/photos/free-stock/6970877038/
 ---
 
-<h3>Extending CCSprite Makes My Life Easier</h3>
+<h4>Extending CCSprite Makes My Life Easier</h4>
 While developing a couple of games that I am currently working on I ended up finding a need to have a CCSprite that would trigger a particular selector. I wanted something lightweight that I could just throw into anything. So I went about writing a quick subclass of CCSprite that at first I thought would be a bit of a throw away one time use thing. It turned out however to be simple and reusable and I find myself reusing the class all over the place, enter ClickableSprite.
 
 The concept is dead simple create a subclass of CCSprite adhering to CCTargetedTouchDelegate, and give it a couple of properties that will store a target and selector.<!-- more --> Here’s the class definition, don’t forget to synthesize those properties though! 
@@ -17,7 +20,7 @@ The concept is dead simple create a subclass of CCSprite adhering to CCTargetedT
 @end
 {% endhighlight %}
 
-<h3>Handling The Touches</h3>
+<h4>Handling The Touches</h4>
 In the implementation file we’ll implement a function (containsTouchLocation:) that will test whether or not a touch is contained by the sprite. This method was lifted from some place or another, I don’t really remember.
 
 {% highlight objc linenos %}
@@ -60,7 +63,7 @@ Finally we will want to add the sprite as a targeted delegate to the CCTouchDisp
 }
 {% endhighlight %}
 
-<h3>Make That Target Bigger So Your Grandma Can Hit it</h3>
+<h4>Make That Target Bigger So Your Grandma Can Hit it</h4>
 That’s great, it works pretty well, but sometimes you want to be able to press a sprite that is kind of small, let’s just add another property clickableSize and synthesize it.
 
 {% highlight objc linenos %}
@@ -79,7 +82,7 @@ Then we can modify our containsTouchLocation function to check for this like so�
 }
 {% endhighlight %}
 
-<h3>One More Thing</h3>
+<h4>One More Thing</h4>
 Oh, and one more thing you might like is to be able to set the priority. CCTouchDispatcher will go through all of its delegates in order of priority, lower being called first. I haven’t found that I need to set the priority after it has been added to the scene so I haven’t bothered to implement that functionality. At any rate we’ll add another property touchPriority
 
 {% highlight objc %}

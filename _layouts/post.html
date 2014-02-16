@@ -4,15 +4,7 @@ section: blog
 ---
 
 <div class="content">
-  <div id="post">
-    <p class="meta_date">
-      <span class="day">{{ page.date | date: "%d" }}</span>
-      <span class="calendar">
-      <span class="month">{{ page.date | date: "%b" }}</span>
-      <span class="year">{{ page.date | date: "%Y" }}</span>
-    </span>
-    </p>
-    <h2>{{ page.title }}</h2>
+  <div id="post" class="container">
     {{ content }}
   </div>
   <div class="pagination">
