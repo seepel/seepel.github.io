@@ -39,10 +39,7 @@
                              (div ,(post-sxml post))))
          #:collection-template (lambda (site title posts prefix)
                                  (define (post-uri post)
-                                   (string-append "/" 
-                                                  (if prefix
-                                                      (string-append prefix "/")
-                                                      "")
+                                   (string-append "/blog/" ; This is a bit annoying
                                                   (site-post-slug site post)
                                                   ".html"))
                                  `((h1 (a (@ (href "/")) 
