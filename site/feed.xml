@@ -1,0 +1,969 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>seanplynch.com</title><subtitle>Recent Posts</subtitle><updated>2020-04-16T19:04:38-0700</updated><link href="seanplynch.com/feed.xml" rel="self" /><link href="seanplynch.com" /><entry><title>Understanding the Guile Type Inferencer</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2020-04-15T12:00:00-0700</updated><link href="/understanding-the-guile-type-inferencer.html" rel="alternate" /><summary type="html">&lt;p&gt;Lately I've been investigating what it would take to provide some sort of type
+analysis to the scheme programming language. In the process I wanted to learn
+a bit about how the Guile Scheme type system works. Naturally my first step was
+to ask the kind folks over at the #guile irc channel for some pointers. Along
+the way someone over there was interested as well, and asked me to write up
+what I found. It's been a while since I've blogged, so here we are.&lt;/p&gt;&lt;p&gt;This topic really digs into the internals of Guile's compiler, which is of
+course a very large topic. I'll also try my best to explain the bits that a
+reader absolutely must know to understand the main points. I'll try to only
+assume a reasonably proficient understanding of programming (in any language)
+and link to resources that provide more in depth background on the Guile
+compiler itself. I don't think a reader &lt;em&gt;must&lt;/em&gt; know the Scheme programming
+language in order to understand what's happening here, but we will be using the
+scheme language throughout the post. Here is a quick mental mapping that should
+get you through.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-js&quot;&gt;// A top level variable
+var foo = &amp;quot;foo&amp;quot;
+// A top level function definition
+function foo(bar, baz) { 
+  return bar + baz 
+} 
+// A function call
+foo(1, 2)&lt;/code&gt;&lt;/pre&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;;; A top level variable
+(define foo &amp;quot;foo&amp;quot;)
+;; A top level function (procedure) definition
+(define (foo bar baz) 
+  (+ bar baz))
+;; A function call
+(foo 1 2)&lt;/code&gt;&lt;/pre&gt;&lt;h3&gt;The Guile Compiler&lt;/h3&gt;&lt;p&gt;In order to understand the details here, it is incredibly helpful to understand
+the &lt;a href=&quot;https://www.gnu.org/software/guile/manual/html_node/Compiler-Tower.html&quot;&gt;Guile Compiler Tower&lt;/a&gt;.
+So best to go read that page and come back (don't worry it's not long). It is
+also pretty helpful to read the entire &lt;a href=&quot;https://www.gnu.org/software/guile/manual/html_node/Compiling-to-the-Virtual-Machine.html&quot;&gt;Compiling to the Virtual Machine&lt;/a&gt;
+section. But don't worry if you don't understand everything, or just don't have
+the time. We'll cover the important bits here. In particular the Intermediate
+Language (IL) that we are interested in here is the
+&lt;a href=&quot;https://www.gnu.org/software/guile/manual/html_node/Continuation_002dPassing-Style.html&quot;&gt;Continuation Passing Style&lt;/a&gt;
+IL, as that is the compiler pass that does type analysis.&lt;/p&gt;&lt;h3&gt;Continuation Passing Style (CPS)&lt;/h3&gt;&lt;p&gt;Without getting all &lt;strong&gt;Compiler Theory™&lt;/strong&gt; on you, for our purposes it will
+probably suffice to consider CPS as a big goto table. Yes,
+&lt;a href=&quot;https://homepages.cwi.nl/~storm/teaching/reader/Dijkstra68.pdf&quot;&gt;goto is considered harmful&lt;/a&gt;,
+but as a tool for a compiler back-end it is actually pretty practical.&lt;/p&gt;&lt;h4&gt;Compiling to CPS&lt;/h4&gt;&lt;p&gt;Guile is great, it exposes the entire compiler to the user, so we can start
+exploring right away. For our example let's consider a simple &amp;quot;hello world&amp;quot;
+program.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(define (main)
+  (display &amp;quot;Hello world!\n&amp;quot;))&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;In order to compile this to CPS we can just use the compile procedure in the
+Guile repl.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (define hello-world
+                      '(define (main)
+                         (display &amp;quot;Hello world!\n&amp;quot;)))
+scheme@(guile-user)&amp;gt; (compile hello-world #:to 'cps)
+$1 = #&amp;lt;intmap 0-18&amp;gt;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;wtf is that &lt;code&gt;#&amp;lt;intmap 0-21&amp;gt;&lt;/code&gt; thing? Well, like I said, this is essentially a
+big goto lookup table, so Guile has an efficient data structure for that: the
+intmap found in the &lt;a href=&quot;https://www.gnu.org/software/guile/docs/docs-2.2/guile-ref/CPS-Soup.html&quot;&gt;CPS Soup&lt;/a&gt;
+section of the manual. Now, let's import the intmap module so that we can
+inspect what the compiler just gave us. At the Guile repl again we call the
+&lt;code&gt;use-modules&lt;/code&gt; procedure.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (use-modules (language cps intmap))&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Now we can start to poke at our intmap, but it is probably also useful to
+assign a sensible name to this intmap, so let's do that now. We'll just use the
+identifier that the repl automatically assigned to the result of our
+expression (namely &lt;code&gt;$1&lt;/code&gt;).&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (define hello-world-cps $1)&lt;/code&gt;&lt;/pre&gt;&lt;h4&gt;Poking at CPS&lt;/h4&gt;&lt;p&gt;An intmap is essentially a mapping of small integers to CPS values. Let's see
+what the first value (at index &lt;code&gt;0&lt;/code&gt;) is, for that we'll use &lt;code&gt;intmap-ref&lt;/code&gt;.
+&lt;code&gt;intmap-ref&lt;/code&gt; is very similar to &lt;code&gt;list-ref&lt;/code&gt; and &lt;code&gt;vector-ref&lt;/code&gt;.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (intmap-ref hello-world-cps 0)
+$2 = #&amp;lt;cps (kfun () 0 1 18)&amp;gt;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Here we can see that we got some sort of CPS value out. It is a cps record of
+type &lt;code&gt;$kfun&lt;/code&gt;. You can go find &lt;em&gt;all&lt;/em&gt; the possible CPS record types in the
+&lt;a href=&quot;https://www.gnu.org/software/guile/docs/docs-2.2/guile-ref/CPS-in-Guile.html#CPS-in-Guile&quot;&gt;CPS in Guile&lt;/a&gt;
+section of the manual, but (spoiler alert &lt;code&gt;$kfun&lt;/code&gt; defines a function entry).
+Looking at that manual page we see that &lt;code&gt;$kfun&lt;/code&gt; has five arguments.&lt;/p&gt;&lt;ol&gt;&lt;li&gt;&lt;p&gt;&lt;strong&gt;src&lt;/strong&gt;
+This is the source location of the original scheme expression. First
+of all this property isn't printed. And second of all, we didn't
+compile our program from a file anyway, so this would be pretty
+useless for us. So we'll just ignore it.&lt;/p&gt;&lt;/li&gt;&lt;li&gt;&lt;p&gt;&lt;strong&gt;meta&lt;/strong&gt;
+The &lt;code&gt;meta&lt;/code&gt; field is some sort of association list describing the
+properties of the procedure (function). We aren't entirely sure
+what this is yet. But none of our functions have arguments, and
+there are no variables, so it should come as no surprise that it is
+empty.&lt;/p&gt;&lt;/li&gt;&lt;li&gt;&lt;p&gt;&lt;strong&gt;self&lt;/strong&gt;
+The documentation for the &lt;code&gt;self&lt;/code&gt; field says:&lt;/p&gt;&lt;blockquote&gt;&lt;p&gt;self is a variable bound to the procedure being called, and which may be
+used for self-references&lt;/p&gt;&lt;/blockquote&gt;&lt;p&gt;So it should make sense that this value is &lt;code&gt;0&lt;/code&gt;. Remember we are looking at
+the CPS value at index &lt;code&gt;0&lt;/code&gt; in our intmap.&lt;/p&gt;&lt;/li&gt;&lt;li&gt;&lt;p&gt;&lt;strong&gt;tail&lt;/strong&gt;
+The documentation for the &lt;code&gt;tail&lt;/code&gt; field says:&lt;/p&gt;&lt;blockquote&gt;&lt;p&gt;tail is the label of the $ktail for this function, corresponding to the
+function’s tail continuation&lt;/p&gt;&lt;/blockquote&gt;&lt;p&gt;So it seems that this field should be the &amp;quot;goto&amp;quot; label for when we are done
+with this function and are going to return.&lt;/p&gt;&lt;/li&gt;&lt;li&gt;&lt;p&gt;&lt;strong&gt;clause&lt;/strong&gt;
+The documentation for the &lt;code&gt;clause&lt;/code&gt; field says:&lt;/p&gt;&lt;blockquote&gt;&lt;p&gt;clause is the label of the first $kclause for the first case-lambda clause
+in the function, or otherwise #f&lt;/p&gt;&lt;/blockquote&gt;&lt;p&gt;So this should be the &amp;quot;goto&amp;quot; label for the first expression of the function
+body.&lt;/p&gt;&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;Well, that was fun. If we look back at what the repl printed initially this all
+lines up pretty nicely.&lt;/p&gt;&lt;ol&gt;&lt;li&gt;src: not printed&lt;/li&gt;&lt;li&gt;meta: &lt;code&gt;'()&lt;/code&gt;&lt;/li&gt;&lt;li&gt;self: &lt;code&gt;0&lt;/code&gt;&lt;/li&gt;&lt;li&gt;tail: &lt;code&gt;1&lt;/code&gt;&lt;/li&gt;&lt;li&gt;clause: &lt;code&gt;18&lt;/code&gt;&lt;/li&gt;&lt;/ol&gt;&lt;h4&gt;What's in my intmap?&lt;/h4&gt;&lt;p&gt;Of course we could do the same for all indices in the intmap from 0-18, but
+that sounds annoying. Let's instead write a function to do it for us! First
+we'll need another module &lt;code&gt;(language cps utils)&lt;/code&gt;. This will give us two
+very useful functions &lt;code&gt;intmap-keys&lt;/code&gt; and &lt;code&gt;intmap-map&lt;/code&gt;, along with a bunch of
+other goodies that we won't need today.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (use-modules (language cps utils))&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Now let's write our function, doesn't have to be &lt;em&gt;too&lt;/em&gt; special.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (define (print-intmap intmap)
+                       (intmap-map (lambda entry
+                                     (format #t &amp;quot;~a\n&amp;quot; entry))
+                                   intmap))&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;And now we're ready to see what our intmap contains!&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (print-intmap hello-world-cps)
+(0 #&amp;lt;cps (kfun () 0 1 18)&amp;gt;)
+(1 #&amp;lt;cps (ktail)&amp;gt;)
+(2 #&amp;lt;cps (kargs (val) (3) (continue 1 (values 3)))&amp;gt;)
+(3 #&amp;lt;cps (kargs () () (continue 2 (unspecified)))&amp;gt;)
+(4 #&amp;lt;cps (kargs (arg) (4) (continue 3 (primcall scm-set!/immediate (box . 1) 2 4)))&amp;gt;)
+(5 #&amp;lt;cps (ktail)&amp;gt;)
+(6 #&amp;lt;cps (kargs (arg) (7) (continue 5 (call 6 7)))&amp;gt;)
+(7 #&amp;lt;cps (kargs (arg) (6) (continue 6 (const &amp;quot;Hello world!\n&amp;quot;)))&amp;gt;)
+(8 #&amp;lt;cps (kargs (box) (8) (continue 7 (primcall scm-ref/immediate (box . 1) 8)))&amp;gt;)
+(9 #&amp;lt;cps (kargs () () (continue 8 (primcall cached-toplevel-box (0 display #t))))&amp;gt;)
+(10 #&amp;lt;cps (kclause (() () #f () #f) 9)&amp;gt;)
+(11 #&amp;lt;cps (kfun ((name . main)) 5 5 10)&amp;gt;)
+(12 #&amp;lt;cps (kargs () () (continue 4 (fun 11)))&amp;gt;)
+(13 #&amp;lt;cps (kargs (module) (9) (continue 12 (primcall cache-current-module! (0) 9)))&amp;gt;)
+(14 #&amp;lt;cps (kargs (main) (2) (continue 13 (primcall current-module #f)))&amp;gt;)
+(15 #&amp;lt;cps (kargs (arg) (10) (continue 14 (primcall define! #f 1 10)))&amp;gt;)
+(16 #&amp;lt;cps (kargs (mod) (1) (continue 15 (const main)))&amp;gt;)
+(17 #&amp;lt;cps (kargs () () (continue 16 (primcall current-module #f)))&amp;gt;)
+(18 #&amp;lt;cps (kclause (() () #f () #f) 17)&amp;gt;)
+$3 = #&amp;lt;intmap 0-18&amp;gt;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Whew! That's a lot of stuff! That's because there is a lot of implicit control
+flow in the higher level scheme language compared to the CPS IL that makes all
+of that control flow explicit. Let's dissect this.&lt;/p&gt;&lt;p&gt;We've already seen that our compiled CPS starts at index 0 with some function,
+and that the first expression in that function is at index 18. Nearly every
+expression I've compiled follows this format. The entry to the program is at
+index 0, and then there is some boilerplate at the very end of the intmap.
+Here we see that from indices 18-17 Guile is setting up the current module
+environment.&lt;/p&gt;&lt;p&gt;I'm afraid we can't tell much about the first field of the &lt;code&gt;$kclause&lt;/code&gt; record at
+index 18. Like the &lt;code&gt;meta&lt;/code&gt; field of the first &lt;code&gt;kfun&lt;/code&gt; record we encountered, it
+is empty, and I suppose we also kind of expect it to be empty. Anyway, here is
+what the documentation says:&lt;/p&gt;&lt;blockquote&gt;&lt;p&gt;&lt;strong&gt;CPS Continuation: $kclause arity cont alternate&lt;/strong&gt;&lt;/p&gt;&lt;p&gt;A clause of a function with a given arity. Applications of a function with
+a compatible set of actual arguments will continue to the continuation
+labelled cont, a $kargs instance representing the clause body. If the
+arguments are incompatible, control proceeds to alternate, which is a
+$kclause for the next clause, or #f if there is no next clause.&lt;/p&gt;&lt;/blockquote&gt;&lt;p&gt;At any rate it is a sure bet that after this &lt;code&gt;$kclause&lt;/code&gt; we jump to index 17
+where we encounter a &lt;code&gt;$kargs&lt;/code&gt; record. Here's what the documentation has to say
+about that:&lt;/p&gt;&lt;blockquote&gt;&lt;p&gt;&lt;strong&gt;CPS Continuation: $kargs names vars term&lt;/strong&gt;&lt;/p&gt;&lt;p&gt;Bind the incoming values to the variables &lt;em&gt;vars&lt;/em&gt;, with original names
+&lt;em&gt;names&lt;/em&gt;, and then evaluate &lt;em&gt;term&lt;/em&gt;.&lt;/p&gt;&lt;/blockquote&gt;&lt;p&gt;So this seems like it is pretty much &lt;code&gt;let&lt;/code&gt;, and that makes sense, even though
+ours is empty. The reason for that is that the &lt;code&gt;current-module&lt;/code&gt; &lt;code&gt;$primcall&lt;/code&gt;
+record takes no arguments. But don't worry, next we jump to index 16 where we
+see a &lt;code&gt;$kargs&lt;/code&gt; record that &lt;em&gt;does&lt;/em&gt; have a parameter. This one is called &lt;code&gt;mod&lt;/code&gt;
+and it is the result of the &lt;code&gt;current-module&lt;/code&gt; call we just stepped through.
+It's assigned to variable &lt;code&gt;1&lt;/code&gt;. We aren't quite sure yet &lt;em&gt;why&lt;/em&gt; this variable is
+associated to index 1 though. It could be an arbitrary number, or it could
+relate back to our CPS index 1.  So for now just remember that the
+current-module is located at variable index 1. From here we continue to index
+15 with the constant symbol &lt;code&gt;'main&lt;/code&gt;. At index 15 we see that we now call the
+&lt;code&gt;define!&lt;/code&gt; primitive with the variable at index 1 (&lt;code&gt;(current-module)&lt;/code&gt;),
+and the variable at index 10 (&lt;code&gt;(const main)&lt;/code&gt;). As far as we can tell this
+places the &lt;code&gt;main&lt;/code&gt; symbol in our module. For the documentation on these
+primitive calls you'll have to jump over to the
+&lt;a href=&quot;https://www.gnu.org/software/guile/manual/html_node/Intrinsic-Call-Instructions.html&quot;&gt;Intrinsic Call Instructions&lt;/a&gt;
+section of the manual. Then we jump through indices 14-13 which seems to be
+more environment setup, though I can't seem to find the documentation for this.
+Finally once we jump through index 12 we reach our main function. He we jump to
+index 4 with the value of &lt;code&gt;(fun 11)&lt;/code&gt;. If we quickly scan up we can see our
+function body starting at index 11 and ending with the &lt;code&gt;$ktail&lt;/code&gt; record at index 5.
+Then from indices 4-1 we see the ending boilerplate for the current module.
+We'll skip over this part.&lt;/p&gt;&lt;h4&gt;Where is &lt;em&gt;my&lt;/em&gt; code?&lt;/h4&gt;&lt;p&gt;As we've seen, our function body is located across indices 11-5.
+Here we see something slightly different though. The
+&lt;code&gt;meta&lt;/code&gt; field of our &lt;code&gt;$kfun&lt;/code&gt; at index 11 actually has some values! In our
+case it is just the name of the function because it takes no arguments. Then we
+see that the &lt;code&gt;self&lt;/code&gt; field is actually index 5 and the &lt;code&gt;tail&lt;/code&gt; field is also at
+index 5, and the &lt;code&gt;clause&lt;/code&gt; field is at index 10 as expected. The self and tail
+fields being the same seems to indicate that this function cannot recurse,
+however that may be a tenuous assumption. At any rate, let's move on to our
+function body at index 10.&lt;/p&gt;&lt;p&gt;Again we see a relatively empty &lt;code&gt;$kclause&lt;/code&gt; that forwards us to
+index 9 where see another empty &lt;code&gt;$kargs&lt;/code&gt; record that continues to index 8
+assigning the &lt;code&gt;display&lt;/code&gt; box that we just evaluated into variable 8, named &lt;code&gt;box&lt;/code&gt;
+and continues to index 7 by unboxing our &lt;code&gt;display&lt;/code&gt; procedure. At index 7 we see
+that we store our unboxed &lt;code&gt;display&lt;/code&gt; procedure at variable 6 and continue
+to index 6 with our &lt;code&gt;&amp;quot;Hello world!\n&amp;quot;&lt;/code&gt; constant string. At index 6 we see that
+our string constant is assigned to variable 7. Then we continue to index 5 with
+the result of &lt;code&gt;(call 6 7)&lt;/code&gt;. Our &lt;code&gt;display&lt;/code&gt; function is stored in variable 6, and
+our constant string is stored in variable 7, so you can think of this as
+&lt;code&gt;(call display &amp;quot;Hello world!\n&amp;quot;)&lt;/code&gt;. From there we continue to our procedure's
+&lt;code&gt;$ktail&lt;/code&gt; record which means this is the entire body. And from there we jump
+back to index 4 to finish up the program's entry &lt;code&gt;$kfun&lt;/code&gt;.&lt;/p&gt;&lt;p&gt;After a few shuffling around of arguments we finally arrive at the &lt;code&gt;$ktail&lt;/code&gt; of
+the entire program at index 1. Remember back when we started our journey that
+the &lt;code&gt;tail&lt;/code&gt; field of the entry function was located at index 1? Well we're done
+now! Yay!&lt;/p&gt;&lt;h3&gt;Wait Sean, didn't you say something about types?&lt;/h3&gt;&lt;p&gt;Whew, yes. Let's figure out what Guile thinks of our types shall we? For this
+we will need to deviate from the manual and look at some code 😱. Here we will
+want to dig through the Guile code-base for something that looks like it does
+some type inference. Lucky for you I did just that and found the module
+&lt;code&gt;(language cps types)&lt;/code&gt;. You can find it in the Guile source tree at the path
+&lt;code&gt;module/language/cps/types.scm&lt;/code&gt;. Yes, it does sound like a pain to go find the
+Guile source code and open this file in a text editor. So here is a snippet
+from the top of the file that gives a quick overview.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;;;; Commentary:
+;;;
+;;; Type analysis computes the possible types and ranges that values may
+;;; have at all program positions.  This analysis can help to prove that
+;;; a primcall has no side-effects, if its arguments have the
+;;; appropriate type and range.  It can also enable constant folding of
+;;; type predicates and, in the future, enable the compiler to choose
+;;; untagged, unboxed representations for numbers.
+;;;
+;;; For the purposes of this analysis, a &amp;quot;type&amp;quot; is an aspect of a value
+;;; that will not change.  Guile's CPS intermediate language does not
+;;; carry manifest type information that asserts properties about given
+;;; values; instead, we recover this information via flow analysis,
+;;; garnering properties from type predicates, constant literals,
+;;; primcall results, and primcalls that assert that their arguments are
+;;; of particular types.
+;;;
+;;; A range denotes a subset of the set of values in a type, bounded by
+;;; a minimum and a maximum.  The precise meaning of a range depends on
+;;; the type.  For real numbers, the range indicates an inclusive lower
+;;; and upper bound on the integer value of a type.  For vectors, the
+;;; range indicates the length of the vector.  The range is the union of
+;;; the signed and unsigned 64-bit ranges.  Additionally, the minimum
+;;; bound of a range may be -inf.0, and the maximum bound may be +inf.0.
+;;; For some types, like pairs, the concept of &amp;quot;range&amp;quot; makes no sense.
+;;; In these cases we consider the range to be -inf.0 to +inf.0.
+;;;
+;;; Types are represented as a bitfield.  Fewer bits means a more precise
+;;; type.  Although normally only values that have a single type will
+;;; have an associated range, this is not enforced.  The range applies
+;;; to all types in the bitfield.  When control flow meets, the types and
+;;; ranges meet with the union operator.
+;;;
+;;; It is not practical to precisely compute value ranges in all cases.
+;;; For example, in the following case:
+;;;
+;;;   (let lp ((n 0)) (when (foo) (lp (1+ n))))
+;;;
+;;; The first time that range analysis visits the program, N is
+;;; determined to be the exact integer 0.  The second time, it is an
+;;; exact integer in the range [0, 1]; the third, [0, 2]; and so on.
+;;; This analysis will terminate, but only after the positive half of
+;;; the 64-bit range has been fully explored and we decide that the
+;;; range of N is [0, +inf.0].  At the same time, we want to do range
+;;; analysis and type analysis at the same time, as there are
+;;; interactions between them, notably in the case of `sqrt' which
+;;; returns a complex number if its argument cannot be proven to be
+;;; non-negative.  So what we do instead is to precisely propagate types
+;;; and ranges when propagating forward, but after the first backwards
+;;; branch is seen, we cause backward branches that would expand the
+;;; range of a value to saturate that range towards positive or negative
+;;; infinity (as appropriate).
+;;;
+;;; A naive approach to type analysis would build up a table that has
+;;; entries for all variables at all program points, but this has
+;;; N-squared complexity and quickly grows unmanageable.  Instead, we
+;;; use _intmaps_ from (language cps intmap) to share state between
+;;; connected program points.
+;;;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;This looks like a pretty good description of a Lattice Constraint Propagation
+algorithm. The tricky bit might be that it seems like Guile handles dynamic
+ranges which I personally haven't found in the literature. Of course, for this
+type of type inference (no pun intended, but certainly appreciated), I've
+actually had a hard time finding a wealth of information. There is &lt;em&gt;a lot&lt;/em&gt; of
+information on Hindley-Milner style type systems though, and I'm only one man
+(who wasn't trained in computer science), so your mileage may vary. Anywho,
+this sounds like what we're looking for, so how can I run it in the repl?&lt;/p&gt;&lt;p&gt;Well, in particular there is one procedure that looks interesting called
+&lt;code&gt;infer-types&lt;/code&gt;. Here is an excerpt of the leading comment and doc-string that
+I pulled from whatever Guile-3.0 version I currently have checked out.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;;; For best results, the labels in the function starting should be
+;; topologically sorted (renumbered).  Otherwise the backward branch
+;; detection mentioned in the module commentary will trigger for
+;; ordinary forward branches.
+(define (infer-types conts kfun)
+  &amp;quot;Compute types for all variables bound in the function labelled
+@var{kfun}, from @var{conts}.  Returns an intmap mapping labels to type
+entries.
+
+A type entry is a vector that describes the types of the values that
+flow into and out of a labelled expression.  The first slot in the type
+entry vector corresponds to the types that flow in, and the rest of the
+slots correspond to the types that flow out.  Each element of the type
+entry vector is an intmap mapping variable name to the variable's
+inferred type.  An inferred type is a 3-vector of type, minimum, and
+maximum, where type is a bitset as a fixnum.&amp;quot;
+  ...)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;It seems like once we have our CPS we should be able to call this procedure
+with it (somehow) to get the types out. Through some trial and error I figured
+out that the parameters you want to pass are:&lt;/p&gt;&lt;ol&gt;&lt;li&gt;&lt;strong&gt;conts&lt;/strong&gt;
+This is your program's CPS representation in intmap form. So in our case
+this would be &lt;code&gt;hello-world-cps&lt;/code&gt;&lt;/li&gt;&lt;li&gt;&lt;strong&gt;kfun&lt;/strong&gt;
+This is an index into your intmap pointing at &lt;em&gt;any&lt;/em&gt; &lt;code&gt;$kfun&lt;/code&gt; value.&lt;/li&gt;&lt;/ol&gt;&lt;p&gt;Let's call this procedure! Index 0 seems like as good a choice as any right?
+We'll ignore the whole comment about sorting from the source. I'm sure it is
+improtant, but our case is so simple let's hope it doesn't actually cause a
+problem. When we call
+&lt;code&gt;compile&lt;/code&gt; on our simple function does it already spit out a sorted intmap?
+¯\_(ツ)_/¯. We'll import the types module and then call &lt;code&gt;infer-types&lt;/code&gt; with
+our cps.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (use-modules (language cps types))
+scheme@(guile-user)&amp;gt; (infer-types hello-world-cps 0)
+$4 = #&amp;lt;intmap 0-4,12-18&amp;gt;&lt;/code&gt;&lt;/pre&gt;&lt;h4&gt;But What Does it all &lt;strong&gt;Mean&lt;/strong&gt;?&lt;/h4&gt;&lt;p&gt;Hey, look at that, we have another intmap. Let's assign it to some meaningful
+name and then peek at what's inside.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (define hello-world-types $4)
+scheme@(guile-user)&amp;gt; (print-intmap hello-world-types)
+(0 #(#&amp;lt;intmap&amp;gt; #&amp;lt;intmap 0&amp;gt;))
+(1 #(#&amp;lt;intmap 0-4,9-10&amp;gt;))
+(2 #(#&amp;lt;intmap 0-4,9-10&amp;gt; #&amp;lt;intmap 0-4,9-10&amp;gt;))
+(3 #(#&amp;lt;intmap 0-2,4,9-10&amp;gt; #&amp;lt;intmap 0-4,9-10&amp;gt;))
+(4 #(#&amp;lt;intmap 0-2,4,9-10&amp;gt; #&amp;lt;intmap 0-2,4,9-10&amp;gt;))
+(12 #(#&amp;lt;intmap 0-2,9-10&amp;gt; #&amp;lt;intmap 0-2,4,9-10&amp;gt;))
+(13 #(#&amp;lt;intmap 0-2,9-10&amp;gt; #&amp;lt;intmap 0-2,9-10&amp;gt;))
+(14 #(#&amp;lt;intmap 0-2,10&amp;gt; #&amp;lt;intmap 0-2,9-10&amp;gt;))
+(15 #(#&amp;lt;intmap 0-1,10&amp;gt; #&amp;lt;intmap 0-2,10&amp;gt;))
+(16 #(#&amp;lt;intmap 0-1&amp;gt; #&amp;lt;intmap 0-1,10&amp;gt;))
+(17 #(#&amp;lt;intmap 0&amp;gt; #&amp;lt;intmap 0-1&amp;gt;))
+(18 #(#&amp;lt;intmap 0&amp;gt; #&amp;lt;intmap 0&amp;gt;))
+$5 = #&amp;lt;intmap 0-4,12-18&amp;gt;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;True to the source code's word we have an intmap of vectors that contain
+intmaps. There is one particular line in the source that I'd like to call out
+(because at first I only skimmed this file, and so it took me &lt;em&gt;forever&lt;/em&gt; to
+realize).&lt;/p&gt;&lt;blockquote&gt;&lt;p&gt;The first slot in the type entry vector corresponds to the types that flow
+in, and the rest of the slots correspond to the types that flow out.&lt;/p&gt;&lt;/blockquote&gt;&lt;p&gt;Just to reiterate, the first item in each vector is the inferred type of the
+&lt;em&gt;inputs&lt;/em&gt; and the remaining are the inferred types of the &lt;em&gt;outputs&lt;/em&gt;.&lt;/p&gt;&lt;p&gt;As usual, let's just look at the first entry (the program entry) to test our
+assumptions (it should be pretty boring). First let's look at the input types
+to our program. We'll access the first element of the inner intmap, that is
+stored in the first element of the vector that is stored in the first element
+of our outter intmap. So we are looking at indices (0, 0, 0).&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (intmap-ref (vector-ref (intmap-ref hello-world-types 
+                                                         0) 
+                                             0) 
+                                 0)
+ice-9/boot-9.scm:1669:16: In procedure raise-exception:
+not found 0
+
+Entering a new prompt.  Type `,bt' for a backtrace or `,q' to continue.
+scheme@(guile-user) [1]&amp;gt; ,q&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;We get an error, though we shouldn't be surprised. The printed representation
+of the first intmap in the first vector has no indices, because obviously the
+entry point to our program has no inputs!&lt;/p&gt;&lt;p&gt;Let's look at the outputs, to do that we'll just look at index 1 of
+the first vector. Looking at the printed representation it should have an entry
+at index 0.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (intmap-ref (vector-ref (intmap-ref hello-world-types 
+                                                         0) 
+                                             1) 
+                                 0)
+$6 = #(67108863 -inf.0 +inf.0)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Now we got a vector with a weird looking number at the front, and then two
+trailing entries for &lt;code&gt;-inf.0&lt;/code&gt; and &lt;code&gt;+inf.0&lt;/code&gt;. So at least we immediately see the
+variable can range from negative to positive infinity. But what is that first
+number? Well let's remember the source comments&lt;/p&gt;&lt;blockquote&gt;&lt;p&gt;An inferred type is a 3-vector of type, minimum, and maximum, where type is a
+bitset as a fixnum.&lt;/p&gt;&lt;/blockquote&gt;&lt;p&gt;We clearly see the minimum and maximum, but what does the type mean. Well we can
+find more clues in the exports from &lt;code&gt;language/cps/types.scm&lt;/code&gt;. In particular the
+module exports constants for all types starting on line 99 and ending on
+line 124.&lt;/p&gt;&lt;p&gt;It's a little hard to tell exactly what they all are from the source alone, but
+I bet they are all integer constants. Let's see if I'm right by just
+copy/pasting them into the repl.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; &amp;amp;fixnum
+$7 = 1
+scheme@(guile-user)&amp;gt; &amp;amp;bignum
+$8 = 2
+scheme@(guile-user)&amp;gt; &amp;amp;flonum
+$9 = 4
+scheme@(guile-user)&amp;gt; &amp;amp;complex
+$10 = 8
+scheme@(guile-user)&amp;gt; &amp;amp;fraction
+$11 = 16
+scheme@(guile-user)&amp;gt;
+scheme@(guile-user)&amp;gt; &amp;amp;char
+$12 = 32
+scheme@(guile-user)&amp;gt; &amp;amp;special-immediate
+$13 = 64
+scheme@(guile-user)&amp;gt; &amp;amp;symbol
+$14 = 128
+scheme@(guile-user)&amp;gt; &amp;amp;keyword
+$15 = 256
+scheme@(guile-user)&amp;gt; &amp;amp;procedure
+$16 = 512
+scheme@(guile-user)&amp;gt; &amp;amp;pointer
+$17 = 1024
+scheme@(guile-user)&amp;gt; &amp;amp;fluid
+$18 = 2048
+scheme@(guile-user)&amp;gt; &amp;amp;pair
+$19 = 4096
+scheme@(guile-user)&amp;gt; &amp;amp;immutable-vector
+$20 = 8192
+scheme@(guile-user)&amp;gt; &amp;amp;mutable-vector
+$21 = 16384
+scheme@(guile-user)&amp;gt; &amp;amp;box
+$22 = 32768
+scheme@(guile-user)&amp;gt; &amp;amp;struct
+$23 = 65536
+scheme@(guile-user)&amp;gt; &amp;amp;string
+$24 = 131072
+scheme@(guile-user)&amp;gt; &amp;amp;bytevector
+$25 = 262144
+scheme@(guile-user)&amp;gt; &amp;amp;bitvector
+$26 = 524288
+scheme@(guile-user)&amp;gt; &amp;amp;array
+$27 = 1048576
+scheme@(guile-user)&amp;gt; &amp;amp;syntax
+$28 = 2097152
+scheme@(guile-user)&amp;gt; &amp;amp;other-heap-object
+$29 = 4194304
+scheme@(guile-user)&amp;gt;
+scheme@(guile-user)&amp;gt; ;; Special immediate values.
+scheme@(guile-user)&amp;gt; &amp;amp;null &amp;amp;nil &amp;amp;false &amp;amp;true &amp;amp;unspecified &amp;amp;undefined &amp;amp;eof
+$30 = 0
+$31 = 1
+$32 = 2
+$33 = 3
+$34 = 4
+$35 = 5
+$36 = 6
+scheme@(guile-user)&amp;gt;
+scheme@(guile-user)&amp;gt; ;; Union types.
+scheme@(guile-user)&amp;gt; &amp;amp;exact-integer &amp;amp;exact-number &amp;amp;real &amp;amp;number &amp;amp;vector
+$37 = 3
+$38 = 19
+$39 = 23
+$40 = 31
+$41 = 24576
+scheme@(guile-user)&amp;gt;
+scheme@(guile-user)&amp;gt; ;; Untagged types.
+scheme@(guile-user)&amp;gt; &amp;amp;f64
+$42 = 8388608
+scheme@(guile-user)&amp;gt; &amp;amp;u64
+$43 = 16777216
+scheme@(guile-user)&amp;gt; &amp;amp;s64
+$44 = 33554432&lt;/code&gt;&lt;/pre&gt;</summary></entry><entry><title>My New Twitter Bot</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2013-01-12T12:00:00-0800</updated><link href="/my-new-twitter-bot.html" rel="alternate" /><summary type="html">&lt;h3&gt;Something a Little Bit Different&lt;/h3&gt;&lt;p&gt;Now that I have updated my blog and gotten the
+&lt;a href=&quot;obligatory-blogging-like-a-hacker-post&quot;&gt;Obligatory Blogging Like a Hacker Post&lt;/a&gt;
+out of the way, I would like to introduce you to
+&lt;a href=&quot;https://twitter.com/bucketobytes&quot;&gt;@bucketobytes&lt;/a&gt;. &lt;code&gt;@bucketobytes&lt;/code&gt; is my new
+twitter bot. Before we get into the details about him, I'd like to talk about
+his inspiration. As I was sorting through my RSS feeds over the holidays I came
+across &lt;a href=&quot;http://randomshopper.tumblr.com&quot;&gt;Random Shopper&lt;/a&gt;, a bot that
+Darius Kazemi wrote. Random Shopper is a bot that randomly buys Darius presents
+on Amazon. I thought&lt;/p&gt;&lt;blockquote&gt;&lt;p&gt;Well that is just a really cool idea, I wish I had thought of it.&lt;/p&gt;&lt;/blockquote&gt;&lt;p&gt;I then went on a hunt for other bots and came across
+&lt;a href=&quot;https://twitter.com/TicBot&quot;&gt;@ticbot&lt;/a&gt; and
+&lt;a href=&quot;http://mashable.com/2012/07/22/funny-twitter-bots/&quot;&gt;a few others&lt;/a&gt;. So I
+decided I wanted to try my hand at such a thing. So I set out on a quest to
+build a twitter spam bot, that (hopefully) wouldn't actually do any spamming.&lt;/p&gt;&lt;h3&gt;What Should a Twitter Bot Do?&lt;/h3&gt;&lt;p&gt;I have grand plans for &lt;code&gt;@bucketobytes&lt;/code&gt;, but to start off with I wanted to keep
+things simple to ensure that I would actually get him out there. I decided that
+the bare minimum was that he should follow people that follow him, reply to
+&lt;code&gt;@mentions&lt;/code&gt;, and tweet randomly. As far as content, I came across
+&lt;a href=&quot;https://github.com/bmc/fortunes&quot;&gt;this github repository&lt;/a&gt; that contains a vast
+number of fortunes. After pairing down the content to the tweet sized fortunes
+there are about 2000 available. I figured that would be a good start for
+&lt;code&gt;@bucketobytes&lt;/code&gt; so I blatantly stole them and put them in my own project (thank
+you &lt;a href=&quot;https://twitter.com/brianclapper!&quot;&gt;@brianclapper&lt;/a&gt;). In the future I have
+been thinking about incorporating &lt;a href=&quot;http://chatoms.com&quot;&gt;chatoms&lt;/a&gt; and I'm sure
+there are other countless resources that I can look into. I thought about other
+more useful content such as: replying to a mention that includes a movie title
+with the times that movie was playing. Upon reconsideration, however, I think
+that the guiding principle I will follow is that &lt;code&gt;@bucketobytes&lt;/code&gt; not really do
+anything all that useful.&lt;/p&gt;&lt;p&gt;As of this writing the current implementation of &lt;code&gt;@bucketobytes&lt;/code&gt; is as follows.
+If you follow him, he will follow you back. If you &lt;code&gt;@mention&lt;/code&gt; him, he will
+&lt;code&gt;@reply&lt;/code&gt; to you with a random fortune. If you &lt;code&gt;@mention&lt;/code&gt; him with the hash tag
+&lt;em&gt;#cc&lt;/em&gt; he will retweet what you've sent him. And finally he will spontaneously
+tweet fortunes at random approximately 22 times per day. There are some other
+implementations I am considering in the future. The first is a mechanism that
+you can submit suggestions, perhaps with the hashtag &lt;em&gt;#iwantbucketobytesto&lt;/em&gt;.
+Perhaps have him lie, for example subscribe to a
+&lt;a href=&quot;http://www.rottentomatoes.com&quot;&gt;Rotten Tomatoes&lt;/a&gt; RSS feed and &lt;code&gt;@bucketobytes&lt;/code&gt;
+will say how much he loved such and such movie. I'm excited to implement new
+ideas as they occur to me. You can find an up to date list of &lt;code&gt;@bucketobytes&lt;/code&gt;
+actions here: &lt;a href=&quot;/bucketobytes/&quot;&gt;@bucketobytes Info Page&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;I will now outline his construction, so if you aren't into reading a lot of
+code feel free to duck out now.&lt;/p&gt;&lt;h3&gt;The Guts of a Twitter Bot&lt;/h3&gt;&lt;p&gt;You can find the source code for &lt;code&gt;@bucketobytes&lt;/code&gt; on GitHub here:
+&lt;a href=&quot;https://github.com/seepel/bucketobytes&quot;&gt;seepel/bucketobytes&lt;/a&gt;.&lt;/p&gt;&lt;p&gt;&lt;em&gt;Disclaimer:&lt;/em&gt; I would ask that you not do anything nefarious with my code, but
+I imagine there is other more advanced software for real spam bots. If you
+arrived at my site looking for a spam bot implementation, you will probably be
+better served to look elsewhere.&lt;/p&gt;&lt;h3&gt;To Python or Not to Python&lt;/h3&gt;&lt;p&gt;I decided to use python to write my bot as I am very familiar with it from my
+Physics days, and it would be easy to get things up and running. For the
+twitter api I tried a few different GitHub projects and decided on
+&lt;a href=&quot;https://github.com/ryanmcgrath/twython&quot;&gt;Twython&lt;/a&gt;. Twython ended up being the
+most robust and gave me the most freedom while taking away as many headaches as
+possible. Other libraries were very good, but ended up being a bit restrictive.
+In order to get things up and running I did have to modify things quite a bit.
+At the time of writing Twython was still primarily based in the v1.0 twitter
+api, and there are some problems with the most recent version of the
+&lt;a href=&quot;http://docs.python-requests.org/en/latest/&quot;&gt;requests&lt;/a&gt; module, in particular
+dealing with oauth. So I updated all the twitter endpoints to v1.1 and modified
+the streaming portion of Twython to handle the new oauth user endpoint. You can
+find my changes here: &lt;a href=&quot;https://github.com/seepel/twython&quot;&gt;seepel/Twython&lt;/a&gt;. I
+didn't end up pushing my changes back to the main repository as my changes are
+a bit of a hack at the moment. I may come back and revisit this if someone else
+doesn't beat me to it.&lt;/p&gt;&lt;h3&gt;&lt;code&gt;@bucketobytes&lt;/code&gt;: A history&lt;/h3&gt;&lt;p&gt;My first &lt;a href=&quot;https://github.com/seepel/bucketobytes/tree/090f3e374b9ac63d09d38a687dc492d97ed067b4&quot;&gt;implementation&lt;/a&gt;
+was rather fragile and relied entirely upon the REST API. What that meant was
+that everything that was done, had to be done in discrete chunks. The script
+would be run periodically, and the bot would have to catch up from its most
+recent state. Since it was just a prototype I was saving the most recent tweet
+id in a text file, and stopping processing whenever I hit that tweet. As one
+would guess this was problematic, if there was ever a problem with that text
+file &lt;code&gt;@bucketobytes&lt;/code&gt; would get out of sync, and potentially re-run any number
+of actions. This would be annoying for anyone that interacted with him. From
+here I decided to move to the streaming API.&lt;/p&gt;&lt;p&gt;The &lt;a href=&quot;https://github.com/seepel/bucketobytes/tree/74d0dec4851cf56f39fd7afbf947b4bf7c4bf499&quot;&gt;streaming&lt;/a&gt;
+version was a bit better. It consisted of two scripts: the first was a script
+that would listen to the user stream and respond accordingly, the second was a
+separate script that when run would post a random fortune. So the respond
+script would act as a long running process to respond to actions, and the post
+script would be run from a crontab periodically. This process worked a lot
+better, and was stable enough to let run for a while. But I had grander plans,
+what if I wanted to incorporate the random posting into the replying and have
+finer control over how many tweets &lt;code&gt;@bucketobytes&lt;/code&gt; was making. This method also
+led to these scripts being rather lengthy, it would be nice to refactor things.&lt;/p&gt;&lt;p&gt;So I setup a &lt;a href=&quot;https://github.com/seepel/bucketobytes/tree/c9f46dc699c0a9e34be3c69a0aa48dc313233cb4&quot;&gt;modular&lt;/a&gt;
+design. To do this I had to learn about threading in python. Luckily I found
+&lt;a href=&quot;http://www.ibm.com/developerworks/aix/library/au-threadingpython/&quot;&gt;this article&lt;/a&gt;
+over at IBM that was dead simple to understand. The script is centered around
+two long running threads. Of course the first is listening to the user streaming
+endpoint to trigger replies and follows. Setting up the stream didn't change much
+from the respond script of the previous iteration. What changed was how I
+funneled input into twitter. When a json object cames down from the user
+stream, it is placed into a queue to be processed. To process the pending
+queue, I setup a Thread class PostScheduler that would be responsible for the
+coordination of posting and following. Here is how that class is setup.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-python&quot;&gt;class PostScheduler(threading.Thread):
+  def __init__(self, api, simulate=False, controllers=None, default_time_to_sleep=60):
+    threading.Thread.__init__(self)
+    self.api = api
+    self.controllers = controllers
+    self.queue = Queue.Queue()
+    self.post_objects = []
+    self.default_time_to_sleep = default_time_to_sleep
+    self.setDaemon(True)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;The class has an instance of a Twython object in the api variable, a list of
+controllers (we'll get to that in a bit), a &lt;code&gt;Queue&lt;/code&gt;, and a list of
+&lt;code&gt;post_objects&lt;/code&gt;. The heartbeat of the bot is determined by the run method.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-python&quot;&gt;def run(self):
+    while True:
+      queue_object = self.queue.get()
+      
+      if self.queue.empty():
+        self.queue.put(self.default_time_to_sleep)
+
+      if isinstance(queue_object, (int, long, float)):
+        time_to_sleep = queue_object
+        if time_to_sleep &amp;gt; 0:
+          time.sleep(time_to_sleep)
+          self.evaluate_tweets()
+      else:
+        self.post_objects.append(queue_object)
+
+      self.queue.task_done()&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;What happens here is that the scheduler will remove the first item in the
+queue. If that item is a number, then that signals to the scheduler that it
+needs to wait before it handles more actions. If that object is not a number,
+then it is assumed that it is a dictionary object representing some twitter
+output (&lt;code&gt;post_object&lt;/code&gt;) that needs to be handled. For example: a json object
+representing a mention from the streaming endpoint. That dictionary is then
+appended to &lt;code&gt;post_objects&lt;/code&gt; for later processing by &lt;code&gt;evaluate_tweets()&lt;/code&gt;.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-python&quot;&gt;  def evaluate_tweets(self):
+    self.count += 1
+    seconds_from_midnight = (datetime.today() - datetime.min).seconds
+    post_objects_to_remove = []
+
+    for post_object in self.post_objects:
+      can_be_handled = False
+      for controller in self.controllers:
+        if controller.can_handle_object(post_object):
+          can_be_handled = True
+          break
+      if not can_be_handled:
+        post_objects_to_remove.append(post_object)
+
+    for post_object in post_objects_to_remove:
+      self.post_objects.remove(post_object)
+
+    for controller in self.controllers:
+      chosen_object = None
+      for post_object in self.post_objects:
+        if self.evaluate_tweet(controller, post_object, seconds_from_midnight):
+          chosen_object = post_object
+          break
+      if chosen_object != None:
+        self.post_objects.remove(chosen_object)
+        break
+      self.evaluate_tweet(controller, { }, seconds_from_midnight)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;The &lt;code&gt;evaluate_tweets()&lt;/code&gt; method is where the controllers come in. The
+controllers allow the whole bot to be configured. The first thing
+&lt;code&gt;evaluate_tweets&lt;/code&gt; does, is figure how many seconds it has been since midnight.
+This way, one can configure the action to be dependent on the time of day. The
+next thing it does is for each &lt;code&gt;post_object&lt;/code&gt;, determine if one of its
+controllers can handle the object, if not the object is removed. The problem is
+that there is a lot of stuff that comes in from the user stream that is not a
+mention or follow, this sequence removes the junk that will never be responded
+to. The next chunk of code runs through all the controllers and gives them an
+opportunity to act on the &lt;code&gt;post_object&lt;/code&gt; via &lt;code&gt;evaluate_tweet&lt;/code&gt;. If a controller
+handles the object, it is of course removed from the list of &lt;code&gt;post_objects&lt;/code&gt; to
+be handled. The very last line evaluates a &lt;code&gt;post_object&lt;/code&gt; being represented by
+an empty dictionary. This is how spontaneous tweets are generated.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-python&quot;&gt;  def evaluate_tweet(self, controller, post_object, seconds_from_midnight):
+    probability = controller.probabilityToPost(post_object, seconds_from_midnight, self.default_time_to_sleep, self.simulate)
+    if probability == 0:
+      return False
+    steps = 10000.0
+    random_number = random.randrange(steps)/steps
+    if random_number &amp;lt;= probability:
+      self.posts += 1
+      print controller
+      print controller.composePost(self.api, post_object, self.simulate)
+      controller.postUpdateStatus(self.api, post_object)
+      return True
+    return False&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;The &lt;code&gt;evaluate_tweet()&lt;/code&gt; method asks a controller for the probability to respond
+to an object based on the object, the time of day, and the size of the time
+step that governs the schedulers heartbeat. The method then generates a random
+number and if the number is less than the probability, prompts the controller
+to respond to the object. This allows a controller to do something such as make
+tweets happen at certain times of day, while still being somewhat random. The
+second thing that is helpful about this method is that it allows a controller
+to back off on certain actions. For example, say there is a controller that
+handles replies, and someone decides to spam the account with 1000 mentions. If
+my bot were to respond to all those mentions at once, it would probably hit the
+twitter limit and potentially get blocked. This allows the bot to cut certain
+users off from replies.&lt;/p&gt;&lt;p&gt;Now that we see how the bot handles the flow of tweets, let's talk controllers.
+Controllers are responsible for determining how and when the bot should tweet.
+For example there is a &lt;code&gt;PostController&lt;/code&gt; that is responsible for spontaneously
+posting tweets, the &lt;code&gt;ReplyController&lt;/code&gt; is responsible for dealing with mentions,
+the &lt;code&gt;RetweetController&lt;/code&gt; is responsible for handling instances where someone
+retweets one of &lt;code&gt;@bucketobytes&lt;/code&gt; tweets, and etc. Here is the &lt;code&gt;PostController&lt;/code&gt;:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-python&quot;&gt;class PostController(object):
+  def __init__(self, post_composers = [], postControllers = None, current_user=None):
+    self.post_composers = post_composers
+    self.current_user = current_user
+
+  def can_handle_object(self, post_object):
+    return len(post_object) == 0
+
+  def probabilityToPost(self, post_object, seconds_from_midnight, time_step, simulate=False):
+    if len(post_object) != 0:
+      return 0
+    if self.isCurrentUser(post_object):
+      return 0
+    # flat distribution 22 tweets per day
+    one_day = 60.*60.*24./float(time_step)
+    if simulate:
+      one_day /= 60
+    return 22./one_day
+
+  def isCurrentUser(self, post_object):
+    if self.current_user == None:
+      print 'No current user skipping'
+      return False
+    # don't respond if the tweet belongs to the current user -- would be infinite loop!
+    if post_object.has_key('user'):
+      if post_object['user'].has_key('id_str'):
+        return post_object['user']['id_str'] == self.current_user['id_str']
+    return False
+
+  def choosePostComposer(self):
+    post_composers = []
+    total_percent = 0
+    for post_composer in self.post_composers:
+      if post_composer.percent() == 100:
+        return post_composer
+      post_composers.append(post_composer)
+      total_percent += post_composer.percent()
+    probability = random.randrange(total_percent)
+    threshold = 0
+    for post_composer in post_composers:
+      if threshold &amp;lt;= post_composer.percent():
+        return post_composer
+      threshold += post_composer.percent()
+    return post_composer
+
+  def composePost(self, api, post_object, simulate):
+    return self.choosePostComposer().compose(api, post_object, simulate)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;The post controller handles post objects that are empty dictionaries, this
+happens at the end of each scheduler cycle. Thus far, it has a constant
+probability to post such that the average should be about 22 tweets per day. In
+the future I will look into making it more likely to tweet at certain times of
+day.&lt;/p&gt;&lt;p&gt;Each controller has a list of &lt;code&gt;PostComposer&lt;/code&gt;s. This will later give me the
+ability to tweet different things. For example: spontaneously tweet a fortune
+40% of the time and post a chatom 60% of the time. The controller object can
+also decide if it should respond to a &lt;code&gt;post_object&lt;/code&gt; based on its content. For
+example here is the &lt;code&gt;ReplyController&lt;/code&gt; that only handles objects which mention
+&lt;code&gt;@bucketobytes&lt;/code&gt;.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-python&quot;&gt;class ReplyController(post.PostController):
+  def __init__(self, post_composers = [], postControllers = None, current_user=None):
+    post.PostController(post_composers, postControllers, current_user)
+    self.post_composers = post_composers
+    self.current_user = current_user
+    self.reply_ids = { }
+
+  def can_handle_object(self, post_object):
+    if self.isCurrentUser(post_object):
+      return False
+    if not post_object.has_key('entities'):
+      return False
+    if not post_object['entities'].has_key('user_mentions'):
+      return False
+    for user_mention in post_object['entities']['user_mentions']:
+      if user_mention['id_str'] == self.current_user['id_str']:
+        return True
+    return False
+
+  def probabilityToPost(self, post_object, seconds_from_midnight, time_step, simulate=False):
+    if self.isCurrentUser(post_object):
+      return 0
+    if not post_object.has_key('entities'):
+      return 0
+    if not post_object['entities'].has_key('user_mentions'):
+      return 0
+    for user_mention in post_object['entities']['user_mentions']:
+      if user_mention['id_str'] == self.current_user['id_str']:
+        return self.probabilityForId(post_object, seconds_from_midnight, time_step)
+    return 0
+
+  def probabilityForId(self, post_object, seconds_from_midnight, time_step):
+    if not post_object.has_key('user'):
+      return 0
+    if not post_object['user'].has_key('id_str'):
+      return 0
+    user_id = post_object['user']['id_str']
+    if not self.reply_ids.has_key(user_id):
+      self.reply_ids[user_id] = { 'probability' : 1, 'first_reply' : datetime.today(), 'last_attempt' : datetime.min }
+
+    current_datetime = datetime.today()
+    if (current_datetime - self.reply_ids[user_id]['first_reply']).seconds &amp;gt; 1:#60*60*24:
+      self.reply_ids[user_id] = { 'probability' : 1, 'first_reply' : datetime.today(), 'last_attempt' : datetime.min }
+      return 1
+
+    probability = self.reply_ids[user_id]['probability']
+    delta = (datetime.today() - self.reply_ids[user_id]['last_attempt'])
+    if delta.microseconds &amp;lt; 500:
+      probability = 0
+
+    self.reply_ids[user_id]['last_attempt'] = datetime.today()
+
+    return probability
+
+  def postUpdateStatus(self, api, post_object):
+    user_id = post_object['user']['id_str']
+    probability = float(self.reply_ids[user_id]['probability'])
+    self.reply_ids[user_id]['probability'] = probability * 0.5&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Finally, the flow trickles down to a &lt;code&gt;PostComposer&lt;/code&gt; which creates the actual
+tweet. Here is the &lt;code&gt;FortuneComposer&lt;/code&gt;&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-python&quot;&gt;class FortuneComposer(PostComposer):
+  def __init__(self):
+    self.fortunes = open('fortunes').read().split('\n%\n')
+    for fortune in self.fortunes:
+      if len(fortune) &amp;gt; 140:
+        self.fortunes.remove(fortune)
+
+  def compose(self, api, post_object, simulate):
+    fortune = None
+    screen_name = None
+    if post_object.has_key('user'):
+      if post_object['user'].has_key('screen_name'):
+        screen_name = post_object['user']['screen_name']
+    if screen_name != None:
+      fortune = self.chooseFortune(140, screen_name)
+    else:
+      fortune = self.chooseFortune()
+    if fortune == None:
+      return None
+    if simulate:
+      return fortune
+    if post_object.has_key('id_str') and screen_name != None:
+      return api.updateStatus(status=fortune, in_reply_to_status_id=post_object['id_str'])
+    else:
+      return api.updateStatus(status=fortune)
+
+  def chooseFortune(self, max_len=140, screen_name=None):
+    fortune = ''
+    if screen_name != None:
+      fortune += '@' + screen_name + ' '
+      max_len -= len(fortune)
+    tmp_fortune = random.choice(self.fortunes)
+    count = 0
+    while len(tmp_fortune) &amp;gt; max_len:
+      if count &amp;gt; 1000:
+        return None
+      tmp_fortune = random.choice(self.fortunes)
+      count += 1
+    fortune += tmp_fortune
+    return fortune&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;This should be pretty self explanatory. It chooses a random fortune, prepending
+a screen name at the beginning if it is constructing a reply. It then ensures
+that the tweet will fit in the allocated 140 characters, and finally uses the
+provided Twython api object to send it to twitter.&lt;/p&gt;&lt;p&gt;To sum everything up, I feel that I have a nice implementation of a twitter bot
+that I can expand on down the line. It should be relatively easy to add new
+actions as I think of them. So why not give it a try and send
+&lt;a href=&quot;https://twitter.com/bucketobytes&quot;&gt;@bucketobytes&lt;/a&gt; an &lt;code&gt;@mention&lt;/code&gt;?&lt;/p&gt;</summary></entry><entry><title>Obligatory Blogging Like a Hacker Post</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2013-01-09T12:00:00-0800</updated><link href="/obligatory-blogging-like-a-hacker-post.html" rel="alternate" /><summary type="html">&lt;h3&gt;The New Site&lt;/h3&gt;&lt;p&gt;For quite a while I have wanted to redesign my site. I originally set it up
+with &lt;a href=&quot;http://wordpress.org&quot;&gt;wordpress&lt;/a&gt; as it was easy to get started. I tried
+various different themes, and even took a look at some of the code in an
+attempt to make my site my own. What I learned is that while very flexible,
+wordpress has a lot going on. In the end I found that it was just too
+complicated for me to dig into the guts and make the changes that I wanted. I
+came across &lt;a href=&quot;https://github.com/mojombo/jekyll&quot;&gt;jekyll&lt;/a&gt; and the geek in me said&lt;/p&gt;&lt;blockquote&gt;&lt;p&gt;Yes! Do it now!&lt;/p&gt;&lt;/blockquote&gt;&lt;p&gt;I had to exhibit a little self control though as I had a dissertation to write.
+Incidentally you'll notice I haven't updated this blog since March, yes it
+takes a while to write a dissertation and find a job. Now that I've taken care
+of those two small details I have been able to come back to this site and you
+can see the end result. Now I know every last little bit of code that goes into
+this site, and I feel better about that. You'll notice that typically when
+someone switches over to using jekyll they inevitably write a
+&lt;strong&gt;Blogging Like a Hacker™&lt;/strong&gt; post, so I thought I would too. Since there are
+many out there, I'll just post some of my thoughts on the process.&lt;/p&gt;&lt;h3&gt;What's a Jekyll and Why Do I Care?&lt;/h3&gt;&lt;p&gt;Jekyll is a static website generator that is &amp;quot;blog aware&amp;quot;. It is a bit of ruby
+code that parses posts and pages into static HTML/css. This means that you write
+your blog posts in &lt;a href=&quot;http://daringfireball.net/projects/markdown/&quot;&gt;Markdown&lt;/a&gt; and
+let Jekyll sort out the details (sort of). There's no database to
+protect/crash, just some text files. This website is now sitting inside my
+&lt;a href=&quot;https://github.com/seepel/seanplynch.com&quot;&gt;GitHub repository&lt;/a&gt;. Feel free to
+glean what you can from it, take anything you want short of plagiarising my
+blog posts. Now that I have it setup I simply write my blog posts in a plain
+text file (using vi of course), run jekyll and copy the contents over to my web
+directory. No fuss no muss. There are some other static site generators out
+there, &lt;a href=&quot;http://octopress.org&quot;&gt;octopress&lt;/a&gt; tends to stand out from the crowd, and
+is actually based on jekyll. These other projects often come with theming,
+which to a non-css wizard sounds pretty good. When I started to work with them
+however, I found myself in the same position again. While it was somewhat toned
+down compared to wordpress, I still found myself getting lost as I tried to
+tweak here and there. So I decided that I didn't &lt;strong&gt;want&lt;/strong&gt; any theming. I wanted
+to build it from the ground up. Ironic, since I don't think I ended up with a
+particularly unique design. The one thing I can say, is that aside from
+&lt;a href=&quot;http://twitter.github.com/bootstrap/&quot;&gt;twitter bootstrap&lt;/a&gt; lending me a helping
+hand, every line is mine. Turns out, that's pretty important to me.&lt;/p&gt;&lt;h3&gt;In closing&lt;/h3&gt;&lt;p&gt;There were some bumps, blogging like a hacker is not for the faint of heart. It
+took some time for me to get &lt;a href=&quot;http://lesscss.org&quot;&gt;less&lt;/a&gt; working, ended up
+stealing a plugin from gist somewhere that I can't remember. I grabbed a
+wordpress &amp;quot;more&amp;quot; excerpt style plugin from
+&lt;a href=&quot;http://www.jacquesf.com/2011/03/creating-excerpts-in-jekyll-with-wordpress-style-more-html-comments/&quot;&gt;Jacques Fortier&lt;/a&gt;.
+There are certainly a lot of things that I don't have running yet, but that is
+the beauty I see in switching to Jekyll. I can very easily update my site with
+new tricks and fix bugs as I go.&lt;/p&gt;</summary></entry><entry><title>Extending cocos2d CCSprite to Handle Touches</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2012-03-04T12:00:00-0800</updated><link href="/extending-cocos2d-ccsprite-to-handle-touches.html" rel="alternate" /><summary type="html">&lt;h3&gt;Extending &lt;code&gt;CCSprite&lt;/code&gt; Makes My Life Easier&lt;/h3&gt;&lt;p&gt;While developing a couple of games that I am currently working on I ended up
+finding a need to have a &lt;code&gt;CCSprite&lt;/code&gt; that would trigger a particular selector.
+I wanted something lightweight that I could just throw into anything. So I went
+about writing a quick subclass of &lt;code&gt;CCSprite&lt;/code&gt; that at first I thought would be a
+bit of a throw away one time use thing. It turned out however to be simple and
+reusable and I find myself reusing the class all over the place, enter
+&lt;code&gt;ClickableSprite&lt;/code&gt;.&lt;/p&gt;&lt;p&gt;The concept is dead simple create a subclass of &lt;code&gt;CCSprite&lt;/code&gt; adhering to
+&lt;code&gt;CCTargetedTouchDelegate&lt;/code&gt;, and give it a couple of properties that will store a
+target and selector. Here's the class definition, don't forget to synthesize
+those properties though!&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-objective-c&quot;&gt;@interface ClickableSprite : CCSprite &amp;lt;CCTargetedTouchDelegate&amp;gt; 
+ 
+@property (nonatomic, assign) id&amp;lt;NSObject&amp;gt; target;
+@property (nonatomic) SEL selector;
+ 
+@end&lt;/code&gt;&lt;/pre&gt;&lt;h3&gt;Handling The Touches&lt;/h3&gt;&lt;p&gt;In the implementation file we’ll implement a function
+(&lt;code&gt;containsTouchLocation:&lt;/code&gt;) that will test whether or not a touch is contained
+by the sprite. This method was lifted from some place or another, I don't
+really remember.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-objective-c&quot;&gt;- (BOOL)containsTouchLocation:(UITouch *)touch {
+    CGPoint p = [self convertTouchToNodeSpaceAR:touch];
+    CGSize size = self.contentSize;
+    CGRect r = CGRectMake(-size.width*0.5, 
+                          -size.height*0.5, 
+                          size.width, 
+                          size.height);
+    return CGRectContainsPoint(r, p);
+}&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Next we want to implement &lt;code&gt;ccTouchBegan:withEvent&lt;/code&gt; and &lt;code&gt;ccTouchEnded:withEvent&lt;/code&gt;
+such that when a user touches the sprite and then lifts their finger without
+moving it off of the sprite it will fire it's selector.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-objective-c&quot;&gt;- (BOOL)ccTouchBegan:(UITouch *)touch withEvent:(UIEvent *)event {
+    return [self containsTouchLocation:touch];
+}
+
+- (void)ccTouchEnded:(UITouch *)touch withEvent:(UIEvent *)event {
+    if(![self containsTouchLocation:touch])
+        return;
+    [self.target performSelector:self.selector withObject:self];
+}&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Finally we will want to add the sprite as a targeted delegate to the
+&lt;code&gt;CCTouchDispatcher&lt;/code&gt; singleton, we'll just do this in the &lt;code&gt;onEnter&lt;/code&gt;. And of
+course we'll want to remove the sprite from the delegate list when it goes away
+(otherwise we'll get &lt;code&gt;EXC_BAD_ACCESS&lt;/code&gt; when the &lt;code&gt;CCTouchDispatcher&lt;/code&gt; tries to get
+at it).&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-objective-c&quot;&gt;- (void)onEnter {
+    [super onEnter];
+    [[CCTouchDispatcher sharedDispatcher] addTargetedDelegate:self 
+                                                     priority:0 
+                                              swallowsTouches:YES];
+}
+ 
+- (void)onExit {
+    [[CCTouchDispatcher sharedDispatcher] removeDelegate:self];
+    [super onExit];
+}&lt;/code&gt;&lt;/pre&gt;&lt;h3&gt;Make That Target Bigger So Your Grandma Can Hit it&lt;/h3&gt;&lt;p&gt;That's great, it works pretty well, but sometimes you want to be able to press
+a sprite that is kind of small, let's just add another property &lt;code&gt;clickableSize&lt;/code&gt;
+and synthesize it.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-objective-c&quot;&gt;@property (nonatomic) CGSize clickableSize;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Then we can modify our &lt;code&gt;containsTouchLocation&lt;/code&gt; function to check for this like
+so…&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-objective-c&quot;&gt;- (BOOL)containsTouchLocation:(UITouch *)touch {
+    CGPoint p = [self convertTouchToNodeSpaceAR:touch];
+    CGSize size = self.contentSize;
+    if(!CGSizeEqualToSize(self.clickableSize, CGSizeZero))
+        size = self.clickableSize;
+    CGRect r = CGRectMake(-size.width*0.5, 
+                          -size.height*0.5, 
+                          size.width, 
+                          size.height);
+    return CGRectContainsPoint(r, p);
+}&lt;/code&gt;&lt;/pre&gt;&lt;h3&gt;One More Thing&lt;/h3&gt;&lt;p&gt;Oh, and one more thing you might like is to be able to set the priority.
+&lt;code&gt;CCTouchDispatcher&lt;/code&gt; will go through all of its delegates in order of priority,
+lower being called first. I haven't found that I need to set the priority after
+it has been added to the scene so I haven't bothered to implement that
+functionality. At any rate we’ll add another property &lt;code&gt;touchPriority&lt;/code&gt;&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-objective-c&quot;&gt;@property (nonatomic) int touchPriority;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;And then simply modify our &lt;code&gt;onEnter&lt;/code&gt; function&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-objective-c&quot;&gt;- (void)onEnter {
+    [super onEnter];
+    [[CCTouchDispatcher sharedDispatcher] addTargetedDelegate:self 
+                                                     priority:self.priority
+                                              swallowsTouches:YES];
+}&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;To use the sprite you initialize it as you would a normal &lt;code&gt;CCSprite&lt;/code&gt;, set the
+relevant properties, and add to a node like any other sprite as well.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-objective-c&quot;&gt;ClickableSprite *sprite = [ClickableSprite spriteWithFile:@&amp;quot;myAwesomeSprite.png&amp;quot;];
+sprite.target = self;
+sprite.selector = @selector(myAwesomeSelector); 
+// Or with the sprite as an argument sprite.selector = @selector(myAwesomeSelector:); 
+// which would call a function that would look like 
+// - (void)myAwesomeSelector:(ClickableSprite *)clickableSprite
+sprite.clickableSize = CGSizeMake(100,100);
+sprite.touchPriority = 2;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Now we have a nice simple class that we can reuse over and over again.&lt;/p&gt;</summary></entry><entry><title>Using PostgreSQL included with Lion Server</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2012-02-29T12:00:00-0800</updated><link href="/using-postgresql-included-with-lion-server.html" rel="alternate" /><summary type="html">&lt;p&gt;In Lion Server Apple has moved from MySQL to PostgreSQL. You may find yourself
+in a situation as I have where you wish to use a web application that requires
+a database (WordPress for example), but don't wish to install MySQL when the
+PostgreSQL server you have will do fine. There are a number of sources out
+there on how to get this done, but the information seems to be scattered across
+different corners of the internet. In particular these
+&lt;a href=&quot;http://www.mactasia.co.uk/using-postgresql-in-lion-server&quot;&gt;two&lt;/a&gt;
+&lt;a href=&quot;https://discussions.apple.com/thread/3199015?start=0&amp;amp;tstart=0&quot;&gt;links&lt;/a&gt; contain
+all the information included in this post, but sifting through them was a bit
+of a pain for me. For this reason I thought I would give my take on how to get
+this done.&lt;/p&gt;&lt;p&gt;In short we are going to get PostgreSQL up and running, create a super user,
+create a new database to be used with an application, create a user for that
+application, and finally give that user access to the database. A quick note,
+throughout the code in this article you will find entries that are prepended
+by either lionserver:~ or databasename=#, these are command prompts and are not
+meant to be typed in, but rather serve to distinguish commands from output.&lt;/p&gt;&lt;p&gt;First up we need to make sure that the PostgreSQL server is running. We're
+going to do this with the command serveradmin. serveradmin is a command line
+tool that allows you to control the various services that Lion Server has to
+offer. In case you haven't used this tool before lets get a flavor of how it
+works.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;lionserver:~ serveradmin
+Usage: serveradmin [-dhvx] [list | start | stop | status | fullstatus | settings | command] [ [ =  ]]
+ 
+  -h, --help     display this message
+  -v, --version  display version info
+  -d, --debug    print command
+  -x, --xml      print output as XML plist
+Examples:
+serveradmin list
+        --Lists all services
+serveradmin start afp
+        --Starts afp server
+serveradmin stop ftp
+        --Stops ftp server
+serveradmin status web
+        --Returns current status of the web server
+serveradmin fullstatus web
+        --Returns more complete status of the web server
+serveradmin settings afp
+        --Returns all afp configuration parameters
+serveradmin settings afp:guestAccess
+        --Returns afp guestAccess attribute
+serveradmin settings afp:guestAccess = yes
+        --Sets afp guestAccess to true
+serveradmin settings
+        --Takes settings commands like above from stdin
+serveradmin command afp:command = getConnectedUsers
+        --Used to perform service specific commands
+serveradmin command
+        --Takes stdin to define generic command that requires other parameters&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Ok that's great now we see that there is a list function lets try that.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;lionserver:~  serveradmin list
+serveradmin must be run as root&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;That's ok, we just need to run this command with a &lt;code&gt;sudo&lt;/code&gt;.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;lionserver:~ sudo serveradmin list
+Password:
+accounts
+addressbook
+afp
+bonjour
+calendar
+certs
+config
+devicemgr
+dhcp
+dirserv
+dns
+filebrowser
+info
+ipfilter
+jabber
+mail
+nat
+netboot
+network
+nfs
+notification
+pcast
+pcastlibrary
+postgres
+radius
+sharing
+signaler
+smb
+swupdate
+vpn
+web
+wiki
+xgrid
+xsan&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;There it is the service is called postgres. Remember when we took a look how
+the command worked? The usage info told us that we can start services, let's
+try that.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;lionserver:~ sudo serveradmin start postgres
+postgres:state = &amp;quot;RUNNING&amp;quot;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;And now PostgreSQL is running! Great, now comes the tricky part. Lion Server
+has a special user that has access to the PostgreSQL server, the user name is
+&lt;code&gt;_postgres&lt;/code&gt;. But personally I don’t want to have to remember to log in as this
+other user every time I want to manipulate PostgreSQL. So let's create a
+PostgreSQL user for our username. First we need to log into PostgreSQL&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;lionserver:~ sudo -u _postgres psql template1&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Then once in PostgreSQL we are going to create a role with the same username as
+our login, for the purposes of this tutorial we will use username and a
+randomly generated password QEGNRWXvxewJ42LdD. Then we will exit out of
+PostgreSQL with the &lt;code&gt;\q&lt;/code&gt; command.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;template1=# CREATE ROLE username WITH superuser password 'QEGNRWXvxewJ42LdD';
+template1=# \q&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Next we want to add our login username to the PostgreSQL Users Group. The
+easiest way to do this is to download the Server Admin Tools package. Launch
+the tool and launch the Workgroups application, in the menu bar click View -&amp;gt;
+Workgroups. You will need to login with an administrator account. Then in the
+Workgroups application you will click View -&amp;gt; Show System Records. This will
+expand the visible list to show everything. Find your login user, and then
+click the Groups Tab. Find the PostgreSQL Users group and add it. Now you can
+execute the &lt;code&gt;psql&lt;/code&gt; command without fiddling around with the &lt;code&gt;_postgres&lt;/code&gt; user.&lt;/p&gt;&lt;p&gt;By default, Lion Server will launch the postgres service with the option
+&lt;code&gt;listen_addresses=&amp;quot;&amp;quot;&lt;/code&gt;, but our web app needs to connect to the service through
+an IP address. So fire up your favorite text editor and point it towards
+&lt;code&gt;/System/Library/LaunchDaemons/org.postgresql.postgres.plist&lt;/code&gt;. In this file you
+want to hunt down the line,&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;listen_addresses=&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;and replace it with&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;listen_addresses=&amp;quot;127.0.0.1&amp;quot;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Finally we are ready to create our database and application user. Your
+particular web application may have its own directions on this, if so you
+should be done with this tutorial. But we will continue to complete a database
+setup for WordPress.&lt;/p&gt;&lt;p&gt;We'll create our database with the convenient command &lt;code&gt;createdb&lt;/code&gt;, create
+&lt;code&gt;wordpressuser&lt;/code&gt; with the command &lt;code&gt;createuser&lt;/code&gt; and then login to the database.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;lionserver:~ createdb wordpressdb
+lionserver:~ createuser
+Enter name of role to add: wordpressuser
+Shall the new role be a superuser? (y/n) n
+Shall the new role be allowed to create databases? (y/n) n
+Shall the new role be allowed to create more new roles? (y/n) n
+lionserver:~ psql -d wordpressdb&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Once in PostgreSQL we'll give &lt;code&gt;wordpressuser&lt;/code&gt; permissions on &lt;code&gt;wordpressdb&lt;/code&gt;
+and assign a randomly generated password.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-bash&quot;&gt;wordpressdb=# GRANT ALL privileges ON DATABASE wordpressdb TO wordpressuse;
+wordpressdb=# ALTER ROLE wordpressuser password 'NvUrYgnz4DRfbXm7y';
+wordpressdb=# \q&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;And we’re done!&lt;/p&gt;</summary></entry></feed>

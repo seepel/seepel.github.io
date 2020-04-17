@@ -1,4 +1,0 @@
-lessc: /usr/local/bin/lessc
-permalink: /blog/:title
-pygments: true
-section_header_level: "h4"
