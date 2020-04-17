@@ -1,4 +1,4 @@
-<!DOCTYPE html><head><meta charset="utf-8" /><title>Understanding the Guile Type Inferencer - seanplynch.com</title><link rel="stylesheet" href="/css/skeleton.css" /><link rel="stylesheet" href="/css/prism.css" /><script src="/js/prism.js"></script></head><body><div class="container"><h2>Understanding the Guile Type Inferencer</h2><div><p>Lately I've been investigating what it would take to provide some sort of type
+<!DOCTYPE html><head><meta charset="utf-8" /><title>Understanding the Guile Type Inferencer - seanplynch.com</title><link rel="stylesheet" href="/css/main.css" /><link rel="stylesheet" href="/css/normalize.css" /><link rel="stylesheet" href="/css/prism.css" /><script src="/js/prism.js"></script></head><body><div class="container"><h1><a href="/">seanplynch.com</a></h1><h2>Understanding the Guile Type Inferencer</h2><div><p>Lately I've been investigating what it would take to provide some sort of type
 analysis to the scheme programming language. In the process I wanted to learn
 a bit about how the Guile Scheme type system works. Naturally my first step was
 to ask the kind folks over at the #guile irc channel for some pointers. Along
@@ -120,7 +120,7 @@ labelled cont, a $kargs instance representing the clause body. If the
 arguments are incompatible, control proceeds to alternate, which is a
 $kclause for the next clause, or #f if there is no next clause.</p></blockquote><p>At any rate it is a sure bet that after this <code>$kclause</code> we jump to index 17
 where we encounter a <code>$kargs</code> record. Here's what the documentation has to say
-about that:</p><blockquote><p><strong>CPS Continuation: $kargs names vars term</strong></p><p>Bind the incoming values to the variables <em>vars</em>, with original names
+about that:</p><blockquote><p><strong>CPS Continuation: $kargs names vars term</strong></p></blockquote><blockquote><p>Bind the incoming values to the variables <em>vars</em>, with original names
 <em>names</em>, and then evaluate <em>term</em>.</p></blockquote><p>So this seems like it is pretty much <code>let</code>, and that makes sense, even though
 ours is empty. The reason for that is that the <code>current-module</code> <code>$primcall</code>
 record takes no arguments. But don't worry, next we jump to index 16 where we
@@ -266,7 +266,7 @@ We'll ignore the whole comment about sorting from the source. I'm sure it is
 improtant, but our case is so simple let's hope it doesn't actually cause a
 problem. When we call
 <code>compile</code> on our simple function does it already spit out a sorted intmap?
-¯\_(ツ)_/¯. We'll import the types module and then call <code>infer-types</code> with
+¯_(ツ)_/¯. We'll import the types module and then call <code>infer-types</code> with
 our cps.</p><pre><code class="language-scheme">scheme@(guile-user)&gt; (use-modules (language cps types))
 scheme@(guile-user)&gt; (infer-types hello-world-cps 0)
 $4 = #&lt;intmap 0-4,12-18&gt;</code></pre><h4>But What Does it all <strong>Mean</strong>?</h4><p>Hey, look at that, we have another intmap. Let's assign it to some meaningful

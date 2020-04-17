@@ -4,12 +4,12 @@ tags: guile types cps
 summary: How does Guile infer types? Let's find out!
 ---
 
-Lately I've been investigating what it would take to provide some sort of type 
-analysis to the scheme programming language. In the process I wanted to learn 
+Lately I've been investigating what it would take to provide some sort of type
+analysis to the scheme programming language. In the process I wanted to learn
 a bit about how the Guile Scheme type system works. Naturally my first step was
 to ask the kind folks over at the #guile irc channel for some pointers. Along
 the way someone over there was interested as well, and asked me to write up
-what I found. It's been a while since I've blogged, so here we are. 
+what I found. It's been a while since I've blogged, so here we are.
 
 This topic really digs into the internals of Guile's compiler, which is of
 course a very large topic. I'll also try my best to explain the bits that a
@@ -50,17 +50,17 @@ also pretty helpful to read the entire [Compiling to the Virtual Machine](https:
 section. But don't worry if you don't understand everything, or just don't have
 the time. We'll cover the important bits here. In particular the Intermediate
 Language (IL) that we are interested in here is the
-[Continuation Passing Style](https://www.gnu.org/software/guile/manual/html_node/Continuation_002dPassing-Style.html) 
+[Continuation Passing Style](https://www.gnu.org/software/guile/manual/html_node/Continuation_002dPassing-Style.html)
 IL, as that is the compiler pass that does type analysis.
 
 ### Continuation Passing Style (CPS)
 Without getting all **Compiler Theory™** on you, for our purposes it will
-probably suffice to consider CPS as a big goto table. Yes, 
-[goto is considered harmful](https://homepages.cwi.nl/~storm/teaching/reader/Dijkstra68.pdf), 
+probably suffice to consider CPS as a big goto table. Yes,
+[goto is considered harmful](https://homepages.cwi.nl/~storm/teaching/reader/Dijkstra68.pdf),
 but as a tool for a compiler back-end it is actually pretty practical.
 
 #### Compiling to CPS
-Guile is great, it exposes the entire compiler to the user, so we can start 
+Guile is great, it exposes the entire compiler to the user, so we can start
 exploring right away. For our example let's consider a simple "hello world"
 program.
 
@@ -69,8 +69,8 @@ program.
   (display "Hello world!\n"))
 ```
 
-In order to compile this to CPS we can just use the compile procedure in the 
-Guile repl. 
+In order to compile this to CPS we can just use the compile procedure in the
+Guile repl.
 
 ```scheme
 scheme@(guile-user)> (define hello-world
@@ -80,10 +80,10 @@ scheme@(guile-user)> (compile hello-world #:to 'cps)
 $1 = #<intmap 0-18>
 ```
 
-wtf is that `#<intmap 0-21>` thing? Well, like I said, this is essentially a 
+wtf is that `#<intmap 0-21>` thing? Well, like I said, this is essentially a
 big goto lookup table, so Guile has an efficient data structure for that: the
 intmap found in the [CPS Soup](https://www.gnu.org/software/guile/docs/docs-2.2/guile-ref/CPS-Soup.html)
-section of the manual. Now, let's import the intmap module so that we can 
+section of the manual. Now, let's import the intmap module so that we can
 inspect what the compiler just gave us. At the Guile repl again we call the
 `use-modules` procedure.
 
@@ -109,8 +109,9 @@ what the first value (at index `0`) is, for that we'll use `intmap-ref`.
 scheme@(guile-user)> (intmap-ref hello-world-cps 0)
 $2 = #<cps (kfun () 0 1 18)>
 ```
+
 Here we can see that we got some sort of CPS value out. It is a cps record of
-type `$kfun`. You can go find *all* the possible CPS record types in the 
+type `$kfun`. You can go find *all* the possible CPS record types in the
 [CPS in Guile](https://www.gnu.org/software/guile/docs/docs-2.2/guile-ref/CPS-in-Guile.html#CPS-in-Guile)
 section of the manual, but (spoiler alert `$kfun` defines a function entry).
 Looking at that manual page we see that `$kfun` has five arguments.
@@ -120,26 +121,32 @@ Looking at that manual page we see that `$kfun` has five arguments.
    of all this property isn't printed. And second of all, we didn't
    compile our program from a file anyway, so this would be pretty
    useless for us. So we'll just ignore it.
+
 2. **meta**
    The `meta` field is some sort of association list describing the
    properties of the procedure (function). We aren't entirely sure
    what this is yet. But none of our functions have arguments, and
    there are no variables, so it should come as no surprise that it is
    empty.
+
 3. **self**
    The documentation for the `self` field says:
+
    > self is a variable bound to the procedure being called, and which may be
-   > used for self-references 
+   > used for self-references
 
    So it should make sense that this value is `0`. Remember we are looking at
    the CPS value at index `0` in our intmap.
+
 4. **tail**
    The documentation for the `tail` field says:
+
    > tail is the label of the $ktail for this function, corresponding to the
    > function’s tail continuation
 
    So it seems that this field should be the "goto" label for when we are done
    with this function and are going to return.
+
 5. **clause**
    The documentation for the `clause` field says:
 
@@ -149,8 +156,10 @@ Looking at that manual page we see that `$kfun` has five arguments.
    So this should be the "goto" label for the first expression of the function
    body.
 
+
+
 Well, that was fun. If we look back at what the repl printed initially this all
-lines up pretty nicely. 
+lines up pretty nicely.
 
 1. src: not printed
 2. meta: `'()`
@@ -158,10 +167,11 @@ lines up pretty nicely.
 4. tail: `1`
 5. clause: `18`
 
+
 #### What's in my intmap?
-Of course we could do the same for all indices in the intmap from 0-18, but 
-that sounds annoying. Let's instead write a function to do it for us! First 
-we'll need another module `(language cps utils)`. This will give us two 
+Of course we could do the same for all indices in the intmap from 0-18, but
+that sounds annoying. Let's instead write a function to do it for us! First
+we'll need another module `(language cps utils)`. This will give us two
 very useful functions `intmap-keys` and `intmap-map`, along with a bunch of
 other goodies that we won't need today.
 
@@ -170,6 +180,7 @@ scheme@(guile-user)> (use-modules (language cps utils))
 ```
 
 Now let's write our function, doesn't have to be *too* special.
+
 ```scheme
 scheme@(guile-user)> (define (print-intmap intmap)
                        (intmap-map (lambda entry
@@ -178,6 +189,7 @@ scheme@(guile-user)> (define (print-intmap intmap)
 ```
 
 And now we're ready to see what our intmap contains!
+
 ```scheme
 scheme@(guile-user)> (print-intmap hello-world-cps)
 (0 #<cps (kfun () 0 1 18)>)
@@ -201,13 +213,14 @@ scheme@(guile-user)> (print-intmap hello-world-cps)
 (18 #<cps (kclause (() () #f () #f) 17)>)
 $3 = #<intmap 0-18>
 ```
+
 Whew! That's a lot of stuff! That's because there is a lot of implicit control
 flow in the higher level scheme language compared to the CPS IL that makes all
 of that control flow explicit. Let's dissect this.
 
 We've already seen that our compiled CPS starts at index 0 with some function,
-and that the first expression in that function is at index 18. Nearly every 
-expression I've compiled follows this format. The entry to the program is at 
+and that the first expression in that function is at index 18. Nearly every
+expression I've compiled follows this format. The entry to the program is at
 index 0, and then there is some boilerplate at the very end of the intmap.
 Here we see that from indices 18-17 Guile is setting up the current module
 environment.
@@ -220,9 +233,9 @@ what the documentation says:
 > **CPS Continuation: $kclause arity cont alternate**
 > 
 > A clause of a function with a given arity. Applications of a function with
-> a compatible set of actual arguments will continue to the continuation 
-> labelled cont, a $kargs instance representing the clause body. If the 
-> arguments are incompatible, control proceeds to alternate, which is a 
+> a compatible set of actual arguments will continue to the continuation
+> labelled cont, a $kargs instance representing the clause body. If the
+> arguments are incompatible, control proceeds to alternate, which is a
 > $kclause for the next clause, or #f if there is no next clause.
 
 At any rate it is a sure bet that after this `$kclause` we jump to index 17
@@ -230,7 +243,7 @@ where we encounter a `$kargs` record. Here's what the documentation has to say
 about that:
 
 > **CPS Continuation: $kargs names vars term**
-> 
+
 > Bind the incoming values to the variables *vars*, with original names
 > *names*, and then evaluate *term*.
 
@@ -241,21 +254,21 @@ see a `$kargs` record that *does* have a parameter. This one is called `mod`
 and it is the result of the `current-module` call we just stepped through.
 It's assigned to variable `1`. We aren't quite sure yet *why* this variable is
 associated to index 1 though. It could be an arbitrary number, or it could
-relate back to our CPS index 1.  So for now just remember that the 
+relate back to our CPS index 1.  So for now just remember that the
 current-module is located at variable index 1. From here we continue to index
 15 with the constant symbol `'main`. At index 15 we see that we now call the
-`define!` primitive with the variable at index 1 (`(current-module)`), 
+`define!` primitive with the variable at index 1 (`(current-module)`),
 and the variable at index 10 (`(const main)`). As far as we can tell this
 places the `main` symbol in our module. For the documentation on these
-primitive calls you'll have to jump over to the 
+primitive calls you'll have to jump over to the
 [Intrinsic Call Instructions](https://www.gnu.org/software/guile/manual/html_node/Intrinsic-Call-Instructions.html)
-section of the manual. Then we jump through indices 14-13 which seems to be 
+section of the manual. Then we jump through indices 14-13 which seems to be
 more environment setup, though I can't seem to find the documentation for this.
 Finally once we jump through index 12 we reach our main function. He we jump to
 index 4 with the value of `(fun 11)`. If we quickly scan up we can see our
 function body starting at index 11 and ending with the `$ktail` record at index 5.
-Then from indices 4-1 we see the ending boilerplate for the current module.
-We'll skip over this part.
+Then from indices 4-1 we see the ending boilerplate for the current module. We'll skip
+over this part.
 
 #### Where is *my* code?
 As we've seen, our function body is located across indices 11-5.
@@ -276,9 +289,9 @@ that we store our unboxed `display` procedure at variable 6 and continue
 to index 6 with our `"Hello world!\n"` constant string. At index 6 we see that
 our string constant is assigned to variable 7. Then we continue to index 5 with
 the result of `(call 6 7)`. Our `display` function is stored in variable 6, and
-our constant string is stored in variable 7, so you can think of this as 
+our constant string is stored in variable 7, so you can think of this as
 `(call display "Hello world!\n")`. From there we continue to our procedure's
-`$ktail` record which means this is the entire body. And from there we jump 
+`$ktail` record which means this is the entire body. And from there we jump
 back to index 4 to finish up the program's entry `$kfun`.
 
 After a few shuffling around of arguments we finally arrive at the `$ktail` of
@@ -287,7 +300,6 @@ the `tail` field of the entry function was located at index 1? Well we're done
 now! Yay!
 
 ### Wait Sean, didn't you say something about types?
-
 Whew, yes. Let's figure out what Guile thinks of our types shall we? For this
 we will need to deviate from the manual and look at some code 😱. Here we will
 want to dig through the Guile code-base for something that looks like it does
@@ -357,16 +369,17 @@ from the top of the file that gives a quick overview.
 ;;; use _intmaps_ from (language cps intmap) to share state between
 ;;; connected program points.
 ;;;
+
 ```
 
 This looks like a pretty good description of a Lattice Constraint Propagation
 algorithm. The tricky bit might be that it seems like Guile handles dynamic
 ranges which I personally haven't found in the literature. Of course, for this
-type of type inference (no pun intended, but certainly appreciated), I've
-actually had a hard time finding a wealth of information. There is *a lot* of
-information on Hindley-Milner style type systems though, and I'm only one man
-(who wasn't trained in computer science), so your mileage may vary. Anywho,
-this sounds like what we're looking for, so how can I run it in the repl?
+type of type inference (no pun intended, but certainly appreciated), I've actually had a hard time finding
+a wealth of information. There is *a lot* of information on Hindley-Milner
+style type systems though, and I'm only one man (who wasn't trained in computer
+science), so your mileage may vary. Anywho, this sounds like what we're looking
+for, so how can I run it in the repl?
 
 Well, in particular there is one procedure that looks interesting called
 `infer-types`. Here is an excerpt of the leading comment and doc-string that
@@ -390,23 +403,25 @@ entry vector is an intmap mapping variable name to the variable's
 inferred type.  An inferred type is a 3-vector of type, minimum, and
 maximum, where type is a bitset as a fixnum."
   ...)
+
 ```
 
 It seems like once we have our CPS we should be able to call this procedure
 with it (somehow) to get the types out. Through some trial and error I figured
 out that the parameters you want to pass are:
-1. **conts** 
-   This is your program's CPS representation in intmap form. So in our case
-   this would be `hello-world-cps`
-2. **kfun** 
-   This is an index into your intmap pointing at *any* `$kfun` value.
+
+1. **conts**
+This is your program's CPS representation in intmap form. So in our case
+this would be `hello-world-cps`
+2. **kfun**
+This is an index into your intmap pointing at *any* `$kfun` value.
 
 Let's call this procedure! Index 0 seems like as good a choice as any right?
 We'll ignore the whole comment about sorting from the source. I'm sure it is
 improtant, but our case is so simple let's hope it doesn't actually cause a
 problem. When we call
 `compile` on our simple function does it already spit out a sorted intmap?
-¯\\\_(ツ)\_/¯. We'll import the types module and then call `infer-types` with
+¯\_(ツ)_/¯. We'll import the types module and then call `infer-types` with
 our cps.
 
 ```scheme
@@ -439,7 +454,7 @@ $5 = #<intmap 0-4,12-18>
 
 True to the source code's word we have an intmap of vectors that contain
 intmaps. There is one particular line in the source that I'd like to call out
-(because at first I only skimmed this file, and so it took me *forever* to 
+(because at first I only skimmed this file, and so it took me *forever* to
 realize).
 
 > The first slot in the type entry vector corresponds to the types that flow
@@ -453,6 +468,7 @@ assumptions (it should be pretty boring). First let's look at the input types
 to our program. We'll access the first element of the inner intmap, that is
 stored in the first element of the vector that is stored in the first element
 of our outter intmap. So we are looking at indices (0, 0, 0).
+
 ```scheme
 scheme@(guile-user)> (intmap-ref (vector-ref (intmap-ref hello-world-types 
                                                          0) 
@@ -472,6 +488,7 @@ entry point to our program has no inputs!
 Let's look at the outputs, to do that we'll just look at index 1 of
 the first vector. Looking at the printed representation it should have an entry
 at index 0.
+
 ```scheme
 scheme@(guile-user)> (intmap-ref (vector-ref (intmap-ref hello-world-types 
                                                          0) 
@@ -490,12 +507,11 @@ number? Well let's remember the source comments
 
 We clearly see the minimum and maximum, but what does the type mean. Well we can
 find more clues in the exports from `language/cps/types.scm`. In particular the
-module exports constants for all types starting on line 99 and ending on 
-line 124.
+module exports constants for all types starting on line 99 and ending on line 124.
 
 It's a little hard to tell exactly what they all are from the source alone, but
 I bet they are all integer constants. Let's see if I'm right by just
-copy/pasting them into the repl.
+copy/pasting them into the repl
 
 ```scheme
 scheme@(guile-user)> &fixnum
@@ -571,5 +587,310 @@ scheme@(guile-user)> &u64
 $43 = 16777216
 scheme@(guile-user)> &s64
 $44 = 33554432
+```
+
+Well it sure seems like they are. It also seems like each one has just a single
+bit set. So let's clean this up a bit and print the values with some padding so
+we can compare them. First the regular `format` procedure isn't up to the task,
+so we'll import the `ice-9` version that has hex/binary format strings. Then we
+define a list of all the types. And then we'll loop through each of them
+printing the hex, binary, symbol name, and decimal values for each type.
+
+```scheme
+scheme@(guile-user)> (use-modules (ice-9 format))
+scheme@(guile-user)> (define types 
+                       '(&fixnum
+                         &bignum
+                         &flonum
+                         &complex
+                         &fraction
+
+                         &char
+                         &special-immediate
+                         &symbol
+                         &keyword
+                         &procedure
+                         &pointer
+                         &fluid
+                         &pair
+                         &immutable-vector
+                         &mutable-vector
+                         &box
+                         &struct
+                         &string
+                         &bytevector
+                         &bitvector
+                         &array
+                         &syntax
+                         &other-heap-object
+
+                         ;; Special immediate values.
+                         &null &nil &false &true &unspecified &undefined &eof
+
+                         ;; Union types.
+                         &exact-integer &exact-number &real &number &vector
+
+                         ;; Untagged types.
+                         &f64
+                         &u64
+                         &s64))
+scheme@(guile-user)> (for-each (lambda (type-pair) 
+                                 (format #t "~8,'0x ~32'0b ~a ~a\n" (car type-pair)
+                                                                    (car type-pair) 
+                                                                    (cdr type-pair) 
+                                                                    (car type-pair)))
+                               ;; Here we combine the symbol name with the value of
+                               ;; of the symbol. In the end we get something like this
+                               ;; '((1 . &fixnum) (2 . &bignum) ...)
+                               (map (lambda (type) 
+                                      (cons (eval type (current-module)) type))
+                                    types))
+00000001 00000000000000000000000000000001 &fixnum 1
+00000002 00000000000000000000000000000010 &bignum 2
+00000004 00000000000000000000000000000100 &flonum 4
+00000008 00000000000000000000000000001000 &complex 8
+00000010 00000000000000000000000000010000 &fraction 16
+00000020 00000000000000000000000000100000 &char 32
+00000040 00000000000000000000000001000000 &special-immediate 64
+00000080 00000000000000000000000010000000 &symbol 128
+00000100 00000000000000000000000100000000 &keyword 256
+00000200 00000000000000000000001000000000 &procedure 512
+00000400 00000000000000000000010000000000 &pointer 1024
+00000800 00000000000000000000100000000000 &fluid 2048
+00001000 00000000000000000001000000000000 &pair 4096
+00002000 00000000000000000010000000000000 &immutable-vector 8192
+00004000 00000000000000000100000000000000 &mutable-vector 16384
+00008000 00000000000000001000000000000000 &box 32768
+00010000 00000000000000010000000000000000 &struct 65536
+00020000 00000000000000100000000000000000 &string 131072
+00040000 00000000000001000000000000000000 &bytevector 262144
+00080000 00000000000010000000000000000000 &bitvector 524288
+00100000 00000000000100000000000000000000 &array 1048576
+00200000 00000000001000000000000000000000 &syntax 2097152
+00400000 00000000010000000000000000000000 &other-heap-object 4194304
+00000000 00000000000000000000000000000000 &null 0
+00000001 00000000000000000000000000000001 &nil 1
+00000002 00000000000000000000000000000010 &false 2
+00000003 00000000000000000000000000000011 &true 3
+00000004 00000000000000000000000000000100 &unspecified 4
+00000005 00000000000000000000000000000101 &undefined 5
+00000006 00000000000000000000000000000110 &eof 6
+00000003 00000000000000000000000000000011 &exact-integer 3
+00000013 00000000000000000000000000010011 &exact-number 19
+00000017 00000000000000000000000000010111 &real 23
+0000001f 00000000000000000000000000011111 &number 31
+00006000 00000000000000000110000000000000 &vector 24576
+00800000 00000000100000000000000000000000 &f64 8388608
+01000000 00000001000000000000000000000000 &u64 16777216
+02000000 00000010000000000000000000000000 &s64 33554432
+```
+
+Well, I think that should satisfy our curiosity. It turns out we were *almost*
+right. The "raw" types are indeed components of a bit mask. But thankfully
+Guile has also conveniently provided us with some relevant unions. For
+example the type code for number is `00000000000000000000000000011111` so that
+encompasses all of the appropriate number subtypes. But does it answer our
+question of what the number 67108863 means? An easy hypothesis to make is that
+it is the union of *all* types. Let's test that theory at the repl!
+
+```scheme
+scheme@(guile-user)> (apply logior (map (lambda (type)
+                                          (eval type (current-module)))
+                                        types))
+$45 = 67108863
+```
+
+And we get our magic number!. So the return type of the first function is *any*
+scheme value! Now we should be able to go hunting in our intmap for a sensible
+type, don't we have a constant string somewhere?
+
+#### Type Hunting
+If we examine the intmap for our types, we see something troubling. The
+procedure body we are interested in seems to be missing. We only have entries
+for the `$kfun` representing the entire program. The string we are looking for
+only exists in the `main` procedure's body. So we'll want to go analyze that
+instead. That's ok though, this should all look pretty familiar.
+
+```scheme
+scheme@(guile-user)> (define main-types (infer-types hello-world-cps 11))
+```
+
+Now let's crack this intmap open and see what we have. If we look at index 6 of
+our CPS intmap we can see that there should be a `&string` type flowing into it
+from the constant string at index 7. So we'll want to pull out the CPS value in
+the `main-types` intmap for index 6, and then look at the first entry in the
+vector that we get back.
+
+```scheme
+scheme@(guile-user)> (print-intmap (vector-ref (intmap-ref main-types 6) 0))
+(5 #(67108863 -inf.0 +inf.0))
+(6 #(67108863 -inf.0 +inf.0))
+(7 #(131072 13 13))
+(8 #(32768 2 +inf.0))
+$46 = #<intmap 5+0-3>
+```
+
+This seems to be the set of variables that our `main` procedure can see.
+
+* At index 8 we see `32768` which is `&box` with a range of 2 to +inf.0. This
+is our `define` box.
+* At variable index 7 we see `131072` which is our `"Hello world!\n"` string
+constant. You can see that Guile has even conveniently provided us with
+bounds for the string's length! It is 13 characters long.
+* At index 6 we see *any* scheme type. Under our current assumptions this
+should be our unboxed `display` function, so I would have expected to see
+`512` for `&procedure`. But perhaps that is just not something Guile infers
+for us, or possibly this is due to not sorting our input intmap? A question
+for another day though.
+* At index 5 we see another *any* scheme type. This one is a bit more puzzling,
+as nowhere in our CPS intmap do we see a `$kargs` that stores a variable to
+index 5. We'll also leave this as another question for another day.
+
+
+It seems that we haven't quite sorted everything out yet, but we certainly have
+seen the tools that will help us fill in the gaps. We've also verified enough
+of our assumptions that it seems pretty clear we are on the right track.
+
+### Closing Thoughts
+There are still some open questions to this analysis.
+
+* Why only one set of input types, but multiple sets of output types? My
+initial hypothesis (that I have not yet tested) is that multiple output sets
+would be needed when branching (for example with `if`).
+* There seems to be some relevance to the integers used to specify variables,
+but I don't think I see what that significance is. And if there is
+significance; is it intentional or coincidental?
+* We also haven't discussed at all the significance of Guile's type inferencer,
+nor have we discussed alternatives. What can it do? What *can't* it do?
+
+
+At any rate, this post is already long enough, and we have covered our
+hello-world example to my satisfaction. The rest will have to wait for another
+time.
+
+### Appendix A
+Yes, I included the repl prompt in all the code snippets that I expected a
+reader to copy/paste, which is just annoying. It means you have to copy paste
+them all one at a time. So here is a big dump of the entire repl history. Now
+you can dump this into your own repl and explore on your own!
+
+Happy Hacking!
+
+```scheme
+(define hello-world
+  '(define (main)
+    (display "Hello world!\n")
+    #;"Hello world!\n"))
+(compile hello-world #:to 'cps)
+(use-modules (language cps intmap))
+(define hello-world-cps $1)
+(intmap-ref hello-world-cps 0)
+(use-modules (language cps utils))
+(define (print-intmap intmap)
+  (intmap-map (lambda entry
+                (format #t "~a\n" entry))
+              intmap))
+(print-intmap hello-world-cps)
+(use-modules (language cps types))
+(infer-types hello-world-cps 0)
+(define hello-world-types $4)
+(print-intmap hello-world-types)
+(intmap-ref (vector-ref (intmap-ref hello-world-types 
+                                    0)
+                        0) 
+            0)
+,q
+(intmap-ref (vector-ref (intmap-ref hello-world-types 
+                                    0) 
+                        1) 
+            0)
+&fixnum
+&bignum
+&flonum
+&complex
+&fraction
+
+&char
+&special-immediate
+&symbol
+&keyword
+&procedure
+&pointer
+&fluid
+&pair
+&immutable-vector
+&mutable-vector
+&box
+&struct
+&string
+&bytevector
+&bitvector
+&array
+&syntax
+&other-heap-object
+
+;; Special immediate values.
+&null &nil &false &true &unspecified &undefined &eof
+
+;; Union types.
+&exact-integer &exact-number &real &number &vector
+
+;; Untagged types.
+&f64
+&u64
+&s64
+(define types 
+  '(&fixnum
+    &bignum
+    &flonum
+    &complex
+    &fraction
+
+    &char
+    &special-immediate
+    &symbol
+    &keyword
+    &procedure
+    &pointer
+    &fluid
+    &pair
+    &immutable-vector
+    &mutable-vector
+    &box
+    &struct
+    &string
+    &bytevector
+    &bitvector
+    &array
+    &syntax
+    &other-heap-object
+
+    ;; Special immediate values.
+    &null &nil &false &true &unspecified &undefined &eof
+
+    ;; Union types.
+    &exact-integer &exact-number &real &number &vector
+
+    ;; Untagged types.
+    &f64
+    &u64
+    &s64))
+(use-modules (ice-9 format))
+(for-each (lambda (type-pair) 
+            (format #t "~8,'0x ~32'0b ~a ~a\n" (car type-pair)
+                                               (car type-pair) 
+                                               (cdr type-pair) 
+                                               (car type-pair)))
+          ;; Here we combine the symbol name with the value of
+          ;; of the symbol. In the end we get something like this
+          ;; '((1 . &fixnum) (2 . &bignum) ...)
+          (map (lambda (type) 
+                 (cons (eval type (current-module)) type))
+               types))
+(apply logior (map (lambda (type)
+                     (eval type (current-module)))
+                   types))
+(define main-types (infer-types hello-world-cps 11))
+(print-intmap (vector-ref (intmap-ref main-types 6) 0))
 ```
 
