@@ -68,6 +68,7 @@
       #:domain "seanplynch.com"
       #:default-metadata '((author . "Sean Lynch")
                            (email . "sean@seanplynch.com"))
+      #:build-directory "blog"
       #:readers (list commonmark-reader sxml-reader)
       #:builders (list (blog #:collections %collections
                              #:theme site-theme) 
