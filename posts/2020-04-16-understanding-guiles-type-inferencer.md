@@ -42,6 +42,11 @@ foo(1, 2)
 (foo 1 2)
 ```
 
+One last note before we get started. I'm *almost* going to walk through all the
+steps that I used to learn this topic. I say *almost* because along the way I
+went down many paths that proved to be useless or just plain wrong. Here I only
+show the questions that led to useful answers. With that, let's dig in! 
+
 ### The Guile Compiler
 In order to understand the details here, it is incredibly helpful to understand
 the [Guile Compiler Tower](https://www.gnu.org/software/guile/manual/html_node/Compiler-Tower.html).

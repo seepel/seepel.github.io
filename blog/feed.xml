@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>seanplynch.com</title><subtitle>Recent Posts</subtitle><updated>2020-04-17T11:05:47-0700</updated><link href="seanplynch.com/feed.xml" rel="self" /><link href="seanplynch.com" /><entry><title>Understanding the Guile Type Inferencer</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2020-04-15T12:00:00-0700</updated><link href="/understanding-the-guile-type-inferencer.html" rel="alternate" /><summary type="html">&lt;p&gt;Lately I've been investigating what it would take to provide some sort of type
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>seanplynch.com</title><subtitle>Recent Posts</subtitle><updated>2020-04-17T11:14:42-0700</updated><link href="seanplynch.com/feed.xml" rel="self" /><link href="seanplynch.com" /><entry><title>Understanding the Guile Type Inferencer</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2020-04-15T12:00:00-0700</updated><link href="/understanding-the-guile-type-inferencer.html" rel="alternate" /><summary type="html">&lt;p&gt;Lately I've been investigating what it would take to provide some sort of type
 analysis to the scheme programming language. In the process I wanted to learn
 a bit about how the Guile Scheme type system works. Naturally my first step was
 to ask the kind folks over at the #guile irc channel for some pointers. Along
@@ -24,7 +24,10 @@ foo(1, 2)&lt;/code&gt;&lt;/pre&gt;&lt;pre&gt;&lt;code class=&quot;language-schem
 (define (foo bar baz) 
   (+ bar baz))
 ;; A function call
-(foo 1 2)&lt;/code&gt;&lt;/pre&gt;&lt;h3&gt;The Guile Compiler&lt;/h3&gt;&lt;p&gt;In order to understand the details here, it is incredibly helpful to understand
+(foo 1 2)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;One last note before we get started. I'm &lt;em&gt;almost&lt;/em&gt; going to walk through all the
+steps that I used to learn this topic. I say &lt;em&gt;almost&lt;/em&gt; because along the way I
+went down many paths that proved to be useless or just plain wrong. Here I only
+show the questions that led to useful answers. With that, let's dig in!&lt;/p&gt;&lt;h3&gt;The Guile Compiler&lt;/h3&gt;&lt;p&gt;In order to understand the details here, it is incredibly helpful to understand
 the &lt;a href=&quot;https://www.gnu.org/software/guile/manual/html_node/Compiler-Tower.html&quot;&gt;Guile Compiler Tower&lt;/a&gt;.
 So best to go read that page and come back (don't worry it's not long). It is
 also pretty helpful to read the entire &lt;a href=&quot;https://www.gnu.org/software/guile/manual/html_node/Compiling-to-the-Virtual-Machine.html&quot;&gt;Compiling to the Virtual Machine&lt;/a&gt;

@@ -24,7 +24,10 @@ foo(1, 2)</code></pre><pre><code class="language-scheme">;; A top level variable
 (define (foo bar baz) 
   (+ bar baz))
 ;; A function call
-(foo 1 2)</code></pre><h3>The Guile Compiler</h3><p>In order to understand the details here, it is incredibly helpful to understand
+(foo 1 2)</code></pre><p>One last note before we get started. I'm <em>almost</em> going to walk through all the
+steps that I used to learn this topic. I say <em>almost</em> because along the way I
+went down many paths that proved to be useless or just plain wrong. Here I only
+show the questions that led to useful answers. With that, let's dig in!</p><h3>The Guile Compiler</h3><p>In order to understand the details here, it is incredibly helpful to understand
 the <a href="https://www.gnu.org/software/guile/manual/html_node/Compiler-Tower.html">Guile Compiler Tower</a>.
 So best to go read that page and come back (don't worry it's not long). It is
 also pretty helpful to read the entire <a href="https://www.gnu.org/software/guile/manual/html_node/Compiling-to-the-Virtual-Machine.html">Compiling to the Virtual Machine</a>
