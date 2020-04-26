@@ -773,6 +773,9 @@ At any rate, this post is already long enough, and we have covered our
 hello-world example to my satisfaction. The rest will have to wait for another
 time.
 
+UPDATE: That time has come, see
+[Understanding the Guile CPS Variable Indices Moor Better](/blog/understanding-the-guile-cps-variable-indices-moor-better.html).
+
 ### Appendix A
 Yes, I included the repl prompt in all the code snippets that I expected a
 reader to copy/paste, which is just annoying. It means you have to copy paste

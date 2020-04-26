@@ -1,4 +1,136 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>seanplynch.com</title><subtitle>Recent Posts</subtitle><updated>2020-04-17T11:14:42-0700</updated><link href="seanplynch.com/feed.xml" rel="self" /><link href="seanplynch.com" /><entry><title>Understanding the Guile Type Inferencer</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2020-04-15T12:00:00-0700</updated><link href="/understanding-the-guile-type-inferencer.html" rel="alternate" /><summary type="html">&lt;p&gt;Lately I've been investigating what it would take to provide some sort of type
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"><title>seanplynch.com</title><subtitle>Recent Posts</subtitle><updated>2020-04-25T19:25:02-0700</updated><link href="seanplynch.com/feed.xml" rel="self" /><link href="seanplynch.com" /><entry><title>Understanding the Guile CPS Variable Indices Moor Better</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2020-04-23T12:00:00-0700</updated><link href="/understanding-the-guile-cps-variable-indices-moor-better.html" rel="alternate" /><summary type="html">&lt;p&gt;In my &lt;a href=&quot;/blog/understanding-the-guile-type-inferencer.html&quot;&gt;last post&lt;/a&gt; we left
+off with a few open questions. In particular I was a bit confused about what
+the various variable indices meant. I think if we dig around a bit, we can sort
+it out now, so let's get our repl ready to go.&lt;/p&gt;&lt;p&gt;We'll start out by importing the modules we used last time to work with CPS.
+Then, we'll redefine our &lt;code&gt;print-intmap&lt;/code&gt; helper function from last time, and
+finally setup our hello-world program, by storing it to a variable and then
+compiling it to CPS.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (use-modules (language cps)
+                                  (language cps intmap)
+                                  (language cps utils))
+scheme@(guile-user)&amp;gt; (define (print-intmap intmap)
+                       (intmap-map (lambda entry
+                                     (format #t &amp;quot;~a\n&amp;quot; entry))
+                                   intmap))
+scheme@(guile-user)&amp;gt; (define hello-world
+                       '(define (main)
+                         (display &amp;quot;Hello world!\n&amp;quot;)))
+scheme@(guile-user)&amp;gt; (define hello-world-cps (compile hello-world #:to 'cps))&lt;/code&gt;&lt;/pre&gt;&lt;h3&gt;Renumbering&lt;/h3&gt;&lt;p&gt;Now that we have everything setup, let's investigate a little more code. In
+the last post I called out a particular line from the documentation in the
+&lt;code&gt;(language cps types)&lt;/code&gt; module:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;;; For best results, the labels in the function starting should be
+;; topologically sorted (renumbered).  Otherwise the backward branch
+;; detection mentioned in the module commentary will trigger for
+;; ordinary forward branches.&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;I went exploring in the Guile codebase to see if I couldn't figure out what
+that meant. I found an answer in the &lt;code&gt;(language cps compile-bytecode)&lt;/code&gt;
+module, unsurprisingly found in the file
+&lt;code&gt;modules/language/cps/compile-bytecode.scm&lt;/code&gt;. Towards the bottom of the file
+there is a procedure called &lt;code&gt;lower-cps&lt;/code&gt;, in my checkout it is on line 692.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(define (lower-cps exp opts)
+  ;; FIXME: For now the closure conversion pass relies on $rec instances
+  ;; being separated into SCCs.  We should fix this to not be the case,
+  ;; and instead move the split-rec pass back to
+  ;; optimize-higher-order-cps.
+  (set! exp (split-rec exp))
+  (set! exp (optimize-higher-order-cps exp opts))
+  (set! exp (convert-closures exp))
+  (set! exp (optimize-first-order-cps exp opts))
+  (set! exp (reify-primitives exp))
+  (set! exp (add-loop-instrumentation exp))
+  (renumber exp))&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Here we see the Guile compiler performing a number of optimization passes, and
+the last one is a procedure called &lt;code&gt;renumber&lt;/code&gt; from &lt;code&gt;(language cps renumber)&lt;/code&gt;.
+This certainly seems to be what we're looking for. Let's go ahead and just use
+that module as well.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (use-modules (language cps renumber))&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Let's now go ahead and try out the &lt;code&gt;renumber&lt;/code&gt; procedure. First we'll print the
+intmap for our un-optimized CPS, and then we'll print the intmap for a
+renumbered cps.&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;scheme@(guile-user)&amp;gt; (print-intmap hello-world-cps)
+(0 #&amp;lt;cps (kfun () 0 1 18)&amp;gt;)
+(1 #&amp;lt;cps (ktail)&amp;gt;)
+(2 #&amp;lt;cps (kargs (val) (3) (continue 1 (values 3)))&amp;gt;)
+(3 #&amp;lt;cps (kargs () () (continue 2 (unspecified)))&amp;gt;)
+(4 #&amp;lt;cps (kargs (arg) (4) (continue 3 (primcall scm-set!/immediate (box . 1) 2 4)))&amp;gt;)
+(5 #&amp;lt;cps (ktail)&amp;gt;)
+(6 #&amp;lt;cps (kargs (arg) (7) (continue 5 (call 6 7)))&amp;gt;)
+(7 #&amp;lt;cps (kargs (arg) (6) (continue 6 (const &amp;quot;Hello world!\n&amp;quot;)))&amp;gt;)
+(8 #&amp;lt;cps (kargs (box) (8) (continue 7 (primcall scm-ref/immediate (box . 1) 8)))&amp;gt;)
+(9 #&amp;lt;cps (kargs () () (continue 8 (primcall cached-toplevel-box (0 display #t))))&amp;gt;)
+(10 #&amp;lt;cps (kclause (() () #f () #f) 9)&amp;gt;)
+(11 #&amp;lt;cps (kfun ((name . main)) 5 5 10)&amp;gt;)
+(12 #&amp;lt;cps (kargs () () (continue 4 (fun 11)))&amp;gt;)
+(13 #&amp;lt;cps (kargs (module) (9) (continue 12 (primcall cache-current-module! (0) 9)))&amp;gt;)
+(14 #&amp;lt;cps (kargs (main) (2) (continue 13 (primcall current-module #f)))&amp;gt;)
+(15 #&amp;lt;cps (kargs (arg) (10) (continue 14 (primcall define! #f 1 10)))&amp;gt;)
+(16 #&amp;lt;cps (kargs (mod) (1) (continue 15 (const main)))&amp;gt;)
+(17 #&amp;lt;cps (kargs () () (continue 16 (primcall current-module #f)))&amp;gt;)
+(18 #&amp;lt;cps (kclause (() () #f () #f) 17)&amp;gt;)
+$1 = #&amp;lt;intmap 0-18&amp;gt;
+scheme@(guile-user)&amp;gt; (print-intmap (renumber hello-world-cps))
+(0 #&amp;lt;cps (kfun () 0 11 1)&amp;gt;)
+(1 #&amp;lt;cps (kclause (() () #f () #f) 2)&amp;gt;)
+(2 #&amp;lt;cps (kargs () () (continue 3 (primcall current-module #f)))&amp;gt;)
+(3 #&amp;lt;cps (kargs (mod) (1) (continue 4 (const main)))&amp;gt;)
+(4 #&amp;lt;cps (kargs (arg) (2) (continue 5 (primcall define! #f 1 2)))&amp;gt;)
+(5 #&amp;lt;cps (kargs (main) (3) (continue 6 (primcall current-module #f)))&amp;gt;)
+(6 #&amp;lt;cps (kargs (module) (4) (continue 7 (primcall cache-current-module! (0) 4)))&amp;gt;)
+(7 #&amp;lt;cps (kargs () () (continue 8 (fun 12)))&amp;gt;)
+(8 #&amp;lt;cps (kargs (arg) (5) (continue 9 (primcall scm-set!/immediate (box . 1) 3 5)))&amp;gt;)
+(9 #&amp;lt;cps (kargs () () (continue 10 (unspecified)))&amp;gt;)
+(10 #&amp;lt;cps (kargs (val) (6) (continue 11 (values 6)))&amp;gt;)
+(11 #&amp;lt;cps (ktail)&amp;gt;)
+(12 #&amp;lt;cps (kfun ((name . main)) 7 18 13)&amp;gt;)
+(13 #&amp;lt;cps (kclause (() () #f () #f) 14)&amp;gt;)
+(14 #&amp;lt;cps (kargs () () (continue 15 (primcall cached-toplevel-box (0 display #t))))&amp;gt;)
+(15 #&amp;lt;cps (kargs (box) (8) (continue 16 (primcall scm-ref/immediate (box . 1) 8)))&amp;gt;)
+(16 #&amp;lt;cps (kargs (arg) (9) (continue 17 (const &amp;quot;Hello world!\n&amp;quot;)))&amp;gt;)
+(17 #&amp;lt;cps (kargs (arg) (10) (continue 18 (call 9 10)))&amp;gt;)
+(18 #&amp;lt;cps (ktail)&amp;gt;)
+$2 = #&amp;lt;intmap 0-18&amp;gt;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Let's look at the entry function at index 0. Remember, the fields of the
+&lt;code&gt;$kfun&lt;/code&gt; record are &lt;code&gt;meta&lt;/code&gt;, &lt;code&gt;self&lt;/code&gt;, &lt;code&gt;tail&lt;/code&gt;, and &lt;code&gt;clause&lt;/code&gt;. Let's consider the
+&lt;code&gt;tail&lt;/code&gt; field first. It is the index of the last expression in the function. In
+our unordered CPS the last expression of the program is at index 1, and in the
+ordered CPS it is at index 11. Now the &lt;code&gt;clause&lt;/code&gt; field contains information
+about the function's arguments (probably a topic for another blog post, lest
+this one get too long), but for our purposes it will serve as the beginning of
+our function since that is where execution will begin when the function is
+called.  In our unordered CPS the clause is at index 18, and in the ordered CPS
+it is at index 1. In between we can see that renumbering our CPS has made our
+entry function expressions contiguous at the beginning of our program. This
+certainly makes it easier to understand a few things that were confusing last
+time around, but let's talk about those variable indices.&lt;/p&gt;&lt;h3&gt;Variables&lt;/h3&gt;&lt;p&gt;Now that we've renumbered we can pretty much just read off what these numbers
+mean. However, we'll first need to make sure we remember of a few details about
+the CPS representation.&lt;/p&gt;&lt;p&gt;We'll first remind ourselves of the &lt;code&gt;$kfun&lt;/code&gt; record
+&lt;code&gt;($kfun meta self tail clause)&lt;/code&gt;. The &lt;code&gt;self&lt;/code&gt; field provides a variable index that allows the function to recurse. So the &lt;code&gt;self&lt;/code&gt;
+field is essentially a variable for the function itself.&lt;/p&gt;&lt;p&gt;Next is the &lt;code&gt;$kargs&lt;/code&gt; record &lt;code&gt;($kargs names vars ($continue cont expression)&lt;/code&gt;.
+The &lt;code&gt;vars&lt;/code&gt; field of the &lt;code&gt;$kargs&lt;/code&gt; record is a list of variables to bind to
+incoming values from the previous continuation, before calling &lt;code&gt;cont&lt;/code&gt; with the
+result values of evaluating &lt;code&gt;expression&lt;/code&gt;. This is all just a fancy way of
+saying that the previous expressions result will be stored in the &lt;code&gt;vars&lt;/code&gt;
+variable indices.&lt;/p&gt;&lt;p&gt;Now we we're ready to read off what each variable index points to.
+Variable 0 is the &lt;code&gt;self&lt;/code&gt; field of the entry function:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(0 #&amp;lt;cps (kfun () 0 1 18)&amp;gt;)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 1 is the &lt;code&gt;current-module&lt;/code&gt; bound at CPS index 3:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(2 #&amp;lt;cps (kargs () () (continue 3 (primcall current-module #f)))&amp;gt;)
+(3 #&amp;lt;cps (kargs (mod) (1) (continue 4 (const main)))&amp;gt;)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 2 is the constant symbol &lt;code&gt;main&lt;/code&gt; bound at CPS index 4:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(3 #&amp;lt;cps (kargs (mod) (1) (continue 4 (const main)))&amp;gt;)
+(4 #&amp;lt;cps (kargs (arg) (2) (continue 5 (primcall define! #f 1 2)))&amp;gt;)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 3 is the result of calling &lt;code&gt;define!&lt;/code&gt; adding &lt;code&gt;'main&lt;/code&gt; to
+&lt;code&gt;current-module&lt;/code&gt;. It is bound at CPS index 5:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(4 #&amp;lt;cps (kargs (arg) (2) (continue 5 (primcall define! #f 1 2)))&amp;gt;)
+(5 #&amp;lt;cps (kargs (main) (3) (continue 6 (primcall current-module #f)))&amp;gt;)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 4 is again the &lt;code&gt;current-module&lt;/code&gt;, and is bound at CPS index 6:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(5 #&amp;lt;cps (kargs (main) (3) (continue 6 (primcall current-module #f)))&amp;gt;)
+(6 #&amp;lt;cps (kargs (module) (4) (continue 7 (primcall cache-current-module! (0) 4)))&amp;gt;)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 5 is our &lt;code&gt;main&lt;/code&gt; function itself bound at CPS index 8:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(7 #&amp;lt;cps (kargs () () (continue 8 (fun 12)))&amp;gt;)
+(8 #&amp;lt;cps (kargs (arg) (5) (continue 9 (primcall scm-set!/immediate (box . 1) 3 5)))&amp;gt;)`&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 6 is the &lt;code&gt;*unspecified*&lt;/code&gt; value. Typically when a function's return
+value is unspecified Guile will return a special &lt;code&gt;*unspecified*&lt;/code&gt; singleton:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(9 #&amp;lt;cps (kargs () () (continue 10 (unspecified)))&amp;gt;)
+(10 #&amp;lt;cps (kargs (val) (6) (continue 11 (values 6)))&amp;gt;)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 7 is the &lt;code&gt;self&lt;/code&gt; field of our &lt;code&gt;main&lt;/code&gt; function:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(12 #&amp;lt;cps (kfun ((name . main)) 7 18 13)&amp;gt;)`&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 8 is the &lt;code&gt;box&lt;/code&gt; that the symbol &lt;code&gt;'display&lt;/code&gt; points to bound at CPS index 15:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(14 #&amp;lt;cps (kargs () () (continue 15 (primcall cached-toplevel-box (0 display #t))))&amp;gt;)
+(15 #&amp;lt;cps (kargs (box) (8) (continue 16 (primcall scm-ref/immediate (box . 1) 8)))&amp;gt;)`&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 9 is the contents of the &lt;code&gt;display&lt;/code&gt; box from variable 8, bound at CPS index 16:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(15 #&amp;lt;cps (kargs (box) (8) (continue 16 (primcall scm-ref/immediate (box . 1) 8)))&amp;gt;)
+(16 #&amp;lt;cps (kargs (arg) (9) (continue 17 (const &amp;quot;Hello world!\n&amp;quot;)))&amp;gt;)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;Variable 10 is our constant string &lt;code&gt;&amp;quot;Hello world!\n&amp;quot;&lt;/code&gt; bound at CPS index 17:&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(16 #&amp;lt;cps (kargs (arg) (9) (continue 17 (const &amp;quot;Hello world!\n&amp;quot;)))&amp;gt;)
+(17 #&amp;lt;cps (kargs (arg) (10) (continue 18 (call 9 10)))&amp;gt;)&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;That is probably enough for today. I think what we've learned is that there is
+no particular significance to the variable indices we saw last time. We also
+figured out what the comments in the source code meant about renumbering,
+though we did not really figure out in which cases unordered CPS would break
+the type inferencer.&lt;/p&gt;&lt;p&gt;In the future it would be fun to explore the other optimizations, and perhaps we will!&lt;/p&gt;&lt;h3&gt;Appendix A - The Repl&lt;/h3&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(use-modules (language cps)
+             (language cps intmap)
+             (language cps utils))
+(define (print-intmap intmap)
+  (intmap-map (lambda entry
+                (format #t &amp;quot;~a\n&amp;quot; entry))
+              intmap))
+(define hello-world
+  '(define (main)
+    (display &amp;quot;Hello world!\n&amp;quot;)))
+(define hello-world-cps (compile hello-world #:to 'cps))
+(use-modules (language cps renumber))
+(print-intmap hello-world-cps)
+(print-intmap (renumber hello-world-cps))&lt;/code&gt;&lt;/pre&gt;</summary></entry><entry><title>Understanding the Guile Type Inferencer</title><author><name>Sean Lynch</name><email>sean@seanplynch.com</email></author><updated>2020-04-15T12:00:00-0700</updated><link href="/understanding-the-guile-type-inferencer.html" rel="alternate" /><summary type="html">&lt;p&gt;Lately I've been investigating what it would take to provide some sort of type
 analysis to the scheme programming language. In the process I wanted to learn
 a bit about how the Guile Scheme type system works. Naturally my first step was
 to ask the kind folks over at the #guile irc channel for some pointers. Along
@@ -524,7 +656,8 @@ but I don't think I see what that significance is. And if there is
 significance; is it intentional or coincidental?&lt;/li&gt;&lt;li&gt;We also haven't discussed at all the significance of Guile's type inferencer,
 nor have we discussed alternatives. What can it do? What &lt;em&gt;can't&lt;/em&gt; it do?&lt;/li&gt;&lt;/ul&gt;&lt;p&gt;At any rate, this post is already long enough, and we have covered our
 hello-world example to my satisfaction. The rest will have to wait for another
-time.&lt;/p&gt;&lt;h3&gt;Appendix A&lt;/h3&gt;&lt;p&gt;Yes, I included the repl prompt in all the code snippets that I expected a
+time.&lt;/p&gt;&lt;p&gt;UPDATE: That time has come, see
+&lt;a href=&quot;/blog/understanding-the-guile-cps-variable-indices-moor-better.html&quot;&gt;Understanding the Guile CPS Variable Indices Moor Better&lt;/a&gt;.&lt;/p&gt;&lt;h3&gt;Appendix A&lt;/h3&gt;&lt;p&gt;Yes, I included the repl prompt in all the code snippets that I expected a
 reader to copy/paste, which is just annoying. It means you have to copy paste
 them all one at a time. So here is a big dump of the entire repl history. Now
 you can dump this into your own repl and explore on your own!&lt;/p&gt;&lt;p&gt;Happy Hacking!&lt;/p&gt;&lt;pre&gt;&lt;code class=&quot;language-scheme&quot;&gt;(define hello-world

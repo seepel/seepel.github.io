@@ -1,0 +1,133 @@
+<!DOCTYPE html><head><meta charset="utf-8" /><title>Understanding the Guile CPS Variable Indices Moor Better - seanplynch.com</title><link rel="stylesheet" href="/css/main.css" /><link rel="stylesheet" href="/css/normalize.css" /><link rel="stylesheet" href="/css/prism.css" /><script src="/js/prism.js"></script></head><body><div class="container"><h1><a href="/">seanplynch.com</a></h1><h2>Understanding the Guile CPS Variable Indices Moor Better</h2><div><p>In my <a href="/blog/understanding-the-guile-type-inferencer.html">last post</a> we left
+off with a few open questions. In particular I was a bit confused about what
+the various variable indices meant. I think if we dig around a bit, we can sort
+it out now, so let's get our repl ready to go.</p><p>We'll start out by importing the modules we used last time to work with CPS.
+Then, we'll redefine our <code>print-intmap</code> helper function from last time, and
+finally setup our hello-world program, by storing it to a variable and then
+compiling it to CPS.</p><pre><code class="language-scheme">scheme@(guile-user)&gt; (use-modules (language cps)
+                                  (language cps intmap)
+                                  (language cps utils))
+scheme@(guile-user)&gt; (define (print-intmap intmap)
+                       (intmap-map (lambda entry
+                                     (format #t &quot;~a\n&quot; entry))
+                                   intmap))
+scheme@(guile-user)&gt; (define hello-world
+                       '(define (main)
+                         (display &quot;Hello world!\n&quot;)))
+scheme@(guile-user)&gt; (define hello-world-cps (compile hello-world #:to 'cps))</code></pre><h3>Renumbering</h3><p>Now that we have everything setup, let's investigate a little more code. In
+the last post I called out a particular line from the documentation in the
+<code>(language cps types)</code> module:</p><pre><code class="language-scheme">;; For best results, the labels in the function starting should be
+;; topologically sorted (renumbered).  Otherwise the backward branch
+;; detection mentioned in the module commentary will trigger for
+;; ordinary forward branches.</code></pre><p>I went exploring in the Guile codebase to see if I couldn't figure out what
+that meant. I found an answer in the <code>(language cps compile-bytecode)</code>
+module, unsurprisingly found in the file
+<code>modules/language/cps/compile-bytecode.scm</code>. Towards the bottom of the file
+there is a procedure called <code>lower-cps</code>, in my checkout it is on line 692.</p><pre><code class="language-scheme">(define (lower-cps exp opts)
+  ;; FIXME: For now the closure conversion pass relies on $rec instances
+  ;; being separated into SCCs.  We should fix this to not be the case,
+  ;; and instead move the split-rec pass back to
+  ;; optimize-higher-order-cps.
+  (set! exp (split-rec exp))
+  (set! exp (optimize-higher-order-cps exp opts))
+  (set! exp (convert-closures exp))
+  (set! exp (optimize-first-order-cps exp opts))
+  (set! exp (reify-primitives exp))
+  (set! exp (add-loop-instrumentation exp))
+  (renumber exp))</code></pre><p>Here we see the Guile compiler performing a number of optimization passes, and
+the last one is a procedure called <code>renumber</code> from <code>(language cps renumber)</code>.
+This certainly seems to be what we're looking for. Let's go ahead and just use
+that module as well.</p><pre><code class="language-scheme">scheme@(guile-user)&gt; (use-modules (language cps renumber))</code></pre><p>Let's now go ahead and try out the <code>renumber</code> procedure. First we'll print the
+intmap for our un-optimized CPS, and then we'll print the intmap for a
+renumbered cps.</p><pre><code class="language-scheme">scheme@(guile-user)&gt; (print-intmap hello-world-cps)
+(0 #&lt;cps (kfun () 0 1 18)&gt;)
+(1 #&lt;cps (ktail)&gt;)
+(2 #&lt;cps (kargs (val) (3) (continue 1 (values 3)))&gt;)
+(3 #&lt;cps (kargs () () (continue 2 (unspecified)))&gt;)
+(4 #&lt;cps (kargs (arg) (4) (continue 3 (primcall scm-set!/immediate (box . 1) 2 4)))&gt;)
+(5 #&lt;cps (ktail)&gt;)
+(6 #&lt;cps (kargs (arg) (7) (continue 5 (call 6 7)))&gt;)
+(7 #&lt;cps (kargs (arg) (6) (continue 6 (const &quot;Hello world!\n&quot;)))&gt;)
+(8 #&lt;cps (kargs (box) (8) (continue 7 (primcall scm-ref/immediate (box . 1) 8)))&gt;)
+(9 #&lt;cps (kargs () () (continue 8 (primcall cached-toplevel-box (0 display #t))))&gt;)
+(10 #&lt;cps (kclause (() () #f () #f) 9)&gt;)
+(11 #&lt;cps (kfun ((name . main)) 5 5 10)&gt;)
+(12 #&lt;cps (kargs () () (continue 4 (fun 11)))&gt;)
+(13 #&lt;cps (kargs (module) (9) (continue 12 (primcall cache-current-module! (0) 9)))&gt;)
+(14 #&lt;cps (kargs (main) (2) (continue 13 (primcall current-module #f)))&gt;)
+(15 #&lt;cps (kargs (arg) (10) (continue 14 (primcall define! #f 1 10)))&gt;)
+(16 #&lt;cps (kargs (mod) (1) (continue 15 (const main)))&gt;)
+(17 #&lt;cps (kargs () () (continue 16 (primcall current-module #f)))&gt;)
+(18 #&lt;cps (kclause (() () #f () #f) 17)&gt;)
+$1 = #&lt;intmap 0-18&gt;
+scheme@(guile-user)&gt; (print-intmap (renumber hello-world-cps))
+(0 #&lt;cps (kfun () 0 11 1)&gt;)
+(1 #&lt;cps (kclause (() () #f () #f) 2)&gt;)
+(2 #&lt;cps (kargs () () (continue 3 (primcall current-module #f)))&gt;)
+(3 #&lt;cps (kargs (mod) (1) (continue 4 (const main)))&gt;)
+(4 #&lt;cps (kargs (arg) (2) (continue 5 (primcall define! #f 1 2)))&gt;)
+(5 #&lt;cps (kargs (main) (3) (continue 6 (primcall current-module #f)))&gt;)
+(6 #&lt;cps (kargs (module) (4) (continue 7 (primcall cache-current-module! (0) 4)))&gt;)
+(7 #&lt;cps (kargs () () (continue 8 (fun 12)))&gt;)
+(8 #&lt;cps (kargs (arg) (5) (continue 9 (primcall scm-set!/immediate (box . 1) 3 5)))&gt;)
+(9 #&lt;cps (kargs () () (continue 10 (unspecified)))&gt;)
+(10 #&lt;cps (kargs (val) (6) (continue 11 (values 6)))&gt;)
+(11 #&lt;cps (ktail)&gt;)
+(12 #&lt;cps (kfun ((name . main)) 7 18 13)&gt;)
+(13 #&lt;cps (kclause (() () #f () #f) 14)&gt;)
+(14 #&lt;cps (kargs () () (continue 15 (primcall cached-toplevel-box (0 display #t))))&gt;)
+(15 #&lt;cps (kargs (box) (8) (continue 16 (primcall scm-ref/immediate (box . 1) 8)))&gt;)
+(16 #&lt;cps (kargs (arg) (9) (continue 17 (const &quot;Hello world!\n&quot;)))&gt;)
+(17 #&lt;cps (kargs (arg) (10) (continue 18 (call 9 10)))&gt;)
+(18 #&lt;cps (ktail)&gt;)
+$2 = #&lt;intmap 0-18&gt;</code></pre><p>Let's look at the entry function at index 0. Remember, the fields of the
+<code>$kfun</code> record are <code>meta</code>, <code>self</code>, <code>tail</code>, and <code>clause</code>. Let's consider the
+<code>tail</code> field first. It is the index of the last expression in the function. In
+our unordered CPS the last expression of the program is at index 1, and in the
+ordered CPS it is at index 11. Now the <code>clause</code> field contains information
+about the function's arguments (probably a topic for another blog post, lest
+this one get too long), but for our purposes it will serve as the beginning of
+our function since that is where execution will begin when the function is
+called.  In our unordered CPS the clause is at index 18, and in the ordered CPS
+it is at index 1. In between we can see that renumbering our CPS has made our
+entry function expressions contiguous at the beginning of our program. This
+certainly makes it easier to understand a few things that were confusing last
+time around, but let's talk about those variable indices.</p><h3>Variables</h3><p>Now that we've renumbered we can pretty much just read off what these numbers
+mean. However, we'll first need to make sure we remember of a few details about
+the CPS representation.</p><p>We'll first remind ourselves of the <code>$kfun</code> record
+<code>($kfun meta self tail clause)</code>. The <code>self</code> field provides a variable index that allows the function to recurse. So the <code>self</code>
+field is essentially a variable for the function itself.</p><p>Next is the <code>$kargs</code> record <code>($kargs names vars ($continue cont expression)</code>.
+The <code>vars</code> field of the <code>$kargs</code> record is a list of variables to bind to
+incoming values from the previous continuation, before calling <code>cont</code> with the
+result values of evaluating <code>expression</code>. This is all just a fancy way of
+saying that the previous expressions result will be stored in the <code>vars</code>
+variable indices.</p><p>Now we we're ready to read off what each variable index points to.
+Variable 0 is the <code>self</code> field of the entry function:</p><pre><code class="language-scheme">(0 #&lt;cps (kfun () 0 1 18)&gt;)</code></pre><p>Variable 1 is the <code>current-module</code> bound at CPS index 3:</p><pre><code class="language-scheme">(2 #&lt;cps (kargs () () (continue 3 (primcall current-module #f)))&gt;)
+(3 #&lt;cps (kargs (mod) (1) (continue 4 (const main)))&gt;)</code></pre><p>Variable 2 is the constant symbol <code>main</code> bound at CPS index 4:</p><pre><code class="language-scheme">(3 #&lt;cps (kargs (mod) (1) (continue 4 (const main)))&gt;)
+(4 #&lt;cps (kargs (arg) (2) (continue 5 (primcall define! #f 1 2)))&gt;)</code></pre><p>Variable 3 is the result of calling <code>define!</code> adding <code>'main</code> to
+<code>current-module</code>. It is bound at CPS index 5:</p><pre><code class="language-scheme">(4 #&lt;cps (kargs (arg) (2) (continue 5 (primcall define! #f 1 2)))&gt;)
+(5 #&lt;cps (kargs (main) (3) (continue 6 (primcall current-module #f)))&gt;)</code></pre><p>Variable 4 is again the <code>current-module</code>, and is bound at CPS index 6:</p><pre><code class="language-scheme">(5 #&lt;cps (kargs (main) (3) (continue 6 (primcall current-module #f)))&gt;)
+(6 #&lt;cps (kargs (module) (4) (continue 7 (primcall cache-current-module! (0) 4)))&gt;)</code></pre><p>Variable 5 is our <code>main</code> function itself bound at CPS index 8:</p><pre><code class="language-scheme">(7 #&lt;cps (kargs () () (continue 8 (fun 12)))&gt;)
+(8 #&lt;cps (kargs (arg) (5) (continue 9 (primcall scm-set!/immediate (box . 1) 3 5)))&gt;)`</code></pre><p>Variable 6 is the <code>*unspecified*</code> value. Typically when a function's return
+value is unspecified Guile will return a special <code>*unspecified*</code> singleton:</p><pre><code class="language-scheme">(9 #&lt;cps (kargs () () (continue 10 (unspecified)))&gt;)
+(10 #&lt;cps (kargs (val) (6) (continue 11 (values 6)))&gt;)</code></pre><p>Variable 7 is the <code>self</code> field of our <code>main</code> function:</p><pre><code class="language-scheme">(12 #&lt;cps (kfun ((name . main)) 7 18 13)&gt;)`</code></pre><p>Variable 8 is the <code>box</code> that the symbol <code>'display</code> points to bound at CPS index 15:</p><pre><code class="language-scheme">(14 #&lt;cps (kargs () () (continue 15 (primcall cached-toplevel-box (0 display #t))))&gt;)
+(15 #&lt;cps (kargs (box) (8) (continue 16 (primcall scm-ref/immediate (box . 1) 8)))&gt;)`</code></pre><p>Variable 9 is the contents of the <code>display</code> box from variable 8, bound at CPS index 16:</p><pre><code class="language-scheme">(15 #&lt;cps (kargs (box) (8) (continue 16 (primcall scm-ref/immediate (box . 1) 8)))&gt;)
+(16 #&lt;cps (kargs (arg) (9) (continue 17 (const &quot;Hello world!\n&quot;)))&gt;)</code></pre><p>Variable 10 is our constant string <code>&quot;Hello world!\n&quot;</code> bound at CPS index 17:</p><pre><code class="language-scheme">(16 #&lt;cps (kargs (arg) (9) (continue 17 (const &quot;Hello world!\n&quot;)))&gt;)
+(17 #&lt;cps (kargs (arg) (10) (continue 18 (call 9 10)))&gt;)</code></pre><p>That is probably enough for today. I think what we've learned is that there is
+no particular significance to the variable indices we saw last time. We also
+figured out what the comments in the source code meant about renumbering,
+though we did not really figure out in which cases unordered CPS would break
+the type inferencer.</p><p>In the future it would be fun to explore the other optimizations, and perhaps we will!</p><h3>Appendix A - The Repl</h3><pre><code class="language-scheme">(use-modules (language cps)
+             (language cps intmap)
+             (language cps utils))
+(define (print-intmap intmap)
+  (intmap-map (lambda entry
+                (format #t &quot;~a\n&quot; entry))
+              intmap))
+(define hello-world
+  '(define (main)
+    (display &quot;Hello world!\n&quot;)))
+(define hello-world-cps (compile hello-world #:to 'cps))
+(use-modules (language cps renumber))
+(print-intmap hello-world-cps)
+(print-intmap (renumber hello-world-cps))</code></pre></div></div></body>
